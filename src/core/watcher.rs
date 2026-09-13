@@ -72,10 +72,9 @@ impl VerdeWatcher {
   pub async fn start(&mut self) -> anyhow::Result<()> {
     loop {
       if let Some(ev) = self.watch_rx.recv().await {
-        self
-          .transform_event(ev)
-          .await
-          .with_context(|| "Failed to transform file event.")?;
+        if let Err(err) = self.transform_event(ev).await {
+          eprintln!("Failed to transform file event: {err:#}");
+        }
       }
     }
   }
@@ -99,8 +98,12 @@ impl VerdeWatcher {
       }
 
       if let Ok(mut payload) = self.payload.try_write() {
-        let file = transform_file(file_path, &event.kind, &self.project)?;
-        payload.add_payload(file);
+        // A single untransformable file (e.g. an unparsable project mapping)
+        // must not stop the watch loop for the remaining files.
+        match transform_file(file_path, &event.kind, &self.project) {
+          Ok(file) => payload.add_payload(file),
+          Err(error) => eprintln!("Failed to transform {}: {error:#}", file_path.display()),
+        }
       }
     }
 
