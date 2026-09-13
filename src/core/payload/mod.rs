@@ -50,5 +50,75 @@ impl Payload {
 
 /// The current unix time in milliseconds.
 fn current_millis() -> u64 {
-  SystemTime::now().duration_since(UNIX_EPOCH).map(|duration| duration.as_millis() as u64).unwrap_or(0)
+  SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .map(|duration| duration.as_millis() as u64)
+    .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::core::tree::value::{Complex, PropertyValue};
+
+  #[test]
+  fn actions_serialise_to_the_wire_format() {
+    let mut payload = Payload::default();
+    payload.add_payload(PayloadAction::Create {
+      path: vec![String::from("Workspace"), String::from("Baseplate")],
+      class_name: Some(String::from("Part")),
+      properties: [(
+        String::from("Size"),
+        PropertyValue::Complex(Complex::Vector3 {
+          x: 512.0,
+          y: 20.0,
+          z: 512.0,
+        }),
+      )]
+      .into(),
+    });
+    payload.add_payload(PayloadAction::Change {
+      path: vec![String::from("ServerScriptService"), String::from("Main")],
+      value: Some(String::from("print('hi')")),
+    });
+    payload.add_payload(PayloadAction::Delete {
+      path: vec![String::from("Workspace"), String::from("Old")],
+    });
+
+    // Timestamps are nondeterministic; zero them for the golden comparison.
+    payload.last_update = None;
+    payload.last_read = None;
+
+    assert_eq!(
+      serde_json::to_string(&payload).unwrap(),
+      concat!(
+        r#"{"events":[{"action":"create","path":["Workspace","Baseplate"],"className":"Part","#,
+        r#""properties":{"Size":{"type":"Vector3","x":512.0,"y":20.0,"z":512.0}}},"#,
+        r#"{"action":"change","path":["ServerScriptService","Main"],"value":"print('hi')"},"#,
+        r#"{"action":"delete","path":["Workspace","Old"]}],"last_update":null,"last_read":null}"#
+      )
+    );
+  }
+
+  #[test]
+  fn extend_actions_preserves_order() {
+    let mut payload = Payload::default();
+    payload.extend_actions(vec![
+      PayloadAction::Delete {
+        path: vec![String::from("A")],
+      },
+      PayloadAction::Delete {
+        path: vec![String::from("B")],
+      },
+    ]);
+    payload.extend_actions(Vec::new());
+
+    assert_eq!(payload.events.len(), 2);
+    assert_eq!(
+      payload.events[0],
+      PayloadAction::Delete {
+        path: vec![String::from("A")]
+      }
+    );
+  }
 }

@@ -141,3 +141,94 @@ fn node_from_project(node: &Node, name: Option<&str>) -> GameNode {
     children,
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  const FIXTURE: &str = r#"{
+    "formatVersion": 1,
+    "className": "DataModel",
+    "children": {
+      "Workspace": {
+        "children": {
+          "Baseplate": {
+            "className": "Part",
+            "properties": {
+              "Anchored": true,
+              "Size": { "type": "Vector3", "x": 512, "y": 20, "z": 512 }
+            }
+          }
+        }
+      }
+    }
+  }"#;
+
+  #[test]
+  fn parses_game_tree_fixture() {
+    let tree: GameTree = serde_json::from_str(FIXTURE).unwrap();
+    assert_eq!(tree.format_version, FORMAT_VERSION);
+    assert_eq!(tree.root.class_name.as_deref(), Some("DataModel"));
+
+    let workspace = tree.root.children.get("Workspace").unwrap();
+    assert_eq!(workspace.effective_class("Workspace"), "Workspace");
+
+    let baseplate = workspace.children.get("Baseplate").unwrap();
+    assert_eq!(baseplate.effective_class("Baseplate"), "Part");
+    assert!(baseplate.properties.contains_key("Anchored"));
+    assert!(baseplate.properties.contains_key("Size"));
+  }
+
+  #[test]
+  fn load_rejects_unsupported_format_versions() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join(GAME_FILE);
+    fs::write(&path, r#"{ "formatVersion": 99, "className": "DataModel" }"#).unwrap();
+    assert!(GameTree::load(&path).is_err());
+  }
+
+  #[test]
+  fn load_rejects_missing_format_versions() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join(GAME_FILE);
+    fs::write(&path, r#"{ "className": "DataModel" }"#).unwrap();
+    assert!(GameTree::load(&path).is_err());
+  }
+
+  #[test]
+  fn serialisation_is_deterministic() {
+    let tree: GameTree = serde_json::from_str(FIXTURE).unwrap();
+    let first = serde_json::to_string_pretty(&tree).unwrap();
+    let second = serde_json::to_string_pretty(&tree).unwrap();
+
+    assert_eq!(first, second);
+    // Map keys are sorted, keeping property order stable across writes.
+    assert!(first.find("\"Anchored\"").unwrap() < first.find("\"Size\"").unwrap());
+  }
+
+  #[test]
+  fn save_and_load_round_trips() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join(GAME_FILE);
+    let tree: GameTree = serde_json::from_str(FIXTURE).unwrap();
+
+    tree.save_pretty(&path).unwrap();
+    assert_eq!(GameTree::load(&path).unwrap(), tree);
+    // No temporary file is left behind.
+    assert!(!path.with_extension("json.tmp").exists());
+  }
+
+  #[test]
+  fn skeleton_from_project_reflects_tree_mapping() {
+    let skeleton = skeleton_from_project(&VerdeProject::default());
+    assert_eq!(skeleton.format_version, FORMAT_VERSION);
+
+    assert!(skeleton.root.children.contains_key("ServerScriptService"));
+    let replicated = skeleton.root.children.get("ReplicatedStorage").unwrap();
+    assert!(replicated.children.contains_key("shared"));
+    assert!(replicated.children.contains_key("client"));
+    // Class names matching the key name fall back to the key.
+    assert!(replicated.children.get("shared").unwrap().class_name.is_none());
+    assert_eq!(replicated.effective_class("ReplicatedStorage"), "ReplicatedStorage");
+  }
+}
