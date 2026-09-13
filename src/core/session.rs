@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 use super::project::VerdeProject;
-use crate::{api, core::watcher::VerdeWatcher};
+use crate::{api, core::tree::TreeState, core::watcher::VerdeWatcher};
 use std::{
   net::{IpAddr, Ipv4Addr, SocketAddr},
   sync::Arc,
@@ -58,13 +58,21 @@ impl VerdeSession {
   pub fn start(&self) -> anyhow::Result<()> {
     println!("Serving on port {}", self.port);
 
+    // Setup game tree state (baseline snapshot + game.json document)
+    let tree = Arc::new(TreeState::initialise(&self.project)?);
+
     // Setup watcher
-    let mut watcher = VerdeWatcher::new(&self.project)?;
+    let mut watcher = VerdeWatcher::new(&self.project, Arc::clone(&tree))?;
 
     // Start serve api
     self.runtime.block_on(async {
-      // Create api route
+      // Apply any game.json edits made while Verde was not running.
       let payload = Arc::clone(&watcher.payload);
+      if let Err(error) = tree.handle_game_json_event(&payload) {
+        eprintln!("Failed to process existing game.json: {error:#}");
+      }
+
+      // Create api route
       match api::get_routes(payload) {
         Ok(api) => {
           // Start watching and serving api

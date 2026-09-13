@@ -4,11 +4,12 @@
 use crate::core::payload::transform::transform_file;
 use crate::core::payload::Payload;
 use crate::core::project::VerdeProject;
+use crate::core::tree::{TreeState, GAME_FILE};
 use anyhow::{bail, Context};
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult, DebouncedEvent, Debouncer, RecommendedCache};
 use std::{
-  path::PathBuf,
+  path::{Path, PathBuf},
   sync::{Arc, RwLock},
   time::Duration,
 };
@@ -27,6 +28,12 @@ pub struct VerdeWatcher {
   /// The verde project currently being watched.
   project: Arc<VerdeProject>,
 
+  /// The canonical project root directory.
+  project_root: PathBuf,
+
+  /// The game tree state handling game.json edits.
+  tree: Arc<TreeState>,
+
   /// The debounced event receiver channel.
   watch_rx: mpsc::Receiver<DebouncedEvent>,
 
@@ -36,11 +43,16 @@ pub struct VerdeWatcher {
 
 impl VerdeWatcher {
   /// Create a new Verde watcher for the specified project.
-  pub fn new(project: &Arc<VerdeProject>) -> anyhow::Result<Self> {
+  pub fn new(project: &Arc<VerdeProject>, tree: Arc<TreeState>) -> anyhow::Result<Self> {
     let (watch_tx, watch_rx) = mpsc::channel(1); // watch send/receive queue 1 item
 
+    // Watch the project root (for game.json) alongside the mapped directories.
+    let root = project.root.as_ref().context("The project has no root directory")?;
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let mut paths = vec![root.clone()];
+    paths.extend(project.tree.get_roots());
+
     // Create debounce watcher
-    let paths = project.tree.get_roots();
     let _debouncer = create_watcher(watch_tx, paths)?;
 
     // Create initial payload
@@ -49,6 +61,8 @@ impl VerdeWatcher {
     Ok(Self {
       _debouncer,
       project: Arc::clone(project),
+      project_root: root,
+      tree,
       watch_rx,
       payload,
     })
@@ -74,6 +88,16 @@ impl VerdeWatcher {
         return Ok(());
       }
 
+      // Route game.json edits through the tree state differ. A document that
+      // fails to parse is logged and ignored until the next save.
+      if self.is_game_json(file_path) {
+        if let Err(error) = self.tree.handle_game_json_event(&self.payload) {
+          eprintln!("Failed to process game.json change: {error:#}");
+        }
+
+        return Ok(());
+      }
+
       if let Ok(mut payload) = self.payload.try_write() {
         let file = transform_file(file_path, &event.kind, &self.project)?;
         payload.add_payload(file);
@@ -81,6 +105,12 @@ impl VerdeWatcher {
     }
 
     Ok(())
+  }
+
+  /// Determines if a path is the project's game.json document.
+  fn is_game_json(&self, path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == GAME_FILE)
+      && path.parent().is_some_and(|parent| parent == self.project_root.as_path())
   }
 }
 
