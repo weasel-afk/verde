@@ -1,8 +1,10 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+pub mod diff;
 pub mod value;
 
+pub use diff::TreeAction;
 pub use value::{Complex, Primitive, PropertyValue};
 
 use crate::core::project::node::Node;
