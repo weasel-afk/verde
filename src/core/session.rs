@@ -13,7 +13,7 @@ use tokio::{
 };
 
 pub const DEFAULT_HOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-pub const DEFAULT_PORT: u16 = 3000;
+pub const DEFAULT_PORT: u16 = 34872;
 
 /// Describes the current state of the session.
 pub enum SessionState {
