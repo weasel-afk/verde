@@ -4,48 +4,39 @@
 
 pub mod filters {
   use super::handlers;
-  use crate::core::payload::Payload;
+  use crate::api::ApiState;
   use std::{
     convert::Infallible,
-    sync::{Arc, RwLock},
+    sync::Arc,
   };
   use warp::{path, Filter};
 
   /// Entry point for the sync api.
-  pub fn sync(
-    payload: Arc<RwLock<Payload>>,
-  ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-    sync_heartbeat(payload)
+  pub fn sync(state: Arc<ApiState>) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    sync_heartbeat(state)
   }
 
   /// Api for requesting heartbeat status of the sync session.
-  pub fn sync_heartbeat(
-    payload: Arc<RwLock<Payload>>,
-  ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+  pub fn sync_heartbeat(state: Arc<ApiState>) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     path!("heartbeat")
       .and(warp::get())
-      .and(with_payload(payload))
+      .and(with_state(state))
       .and_then(handlers::sync_heartbeat)
   }
 
   /// Helper for warp.
-  fn with_payload(
-    payload: Arc<RwLock<Payload>>,
-  ) -> impl Filter<Extract = (Arc<RwLock<Payload>>,), Error = Infallible> + Clone {
-    warp::any().map(move || Arc::clone(&payload))
+  fn with_state(state: Arc<ApiState>) -> impl Filter<Extract = (Arc<ApiState>,), Error = Infallible> + Clone {
+    warp::any().map(move || Arc::clone(&state))
   }
 }
 
 mod handlers {
-  use crate::core::payload::Payload;
-  use std::{
-    convert::Infallible,
-    sync::{Arc, RwLock},
-  };
+  use crate::api::ApiState;
+  use std::{convert::Infallible, sync::Arc};
 
-  pub async fn sync_heartbeat(payload: Arc<RwLock<Payload>>) -> Result<impl warp::Reply, Infallible> {
-    let r = payload.read().unwrap().clone();
-    if let Ok(mut w) = payload.try_write() {
+  pub async fn sync_heartbeat(state: Arc<ApiState>) -> Result<impl warp::Reply, Infallible> {
+    let r = state.payload.read().unwrap().clone();
+    if let Ok(mut w) = state.payload.try_write() {
       w.clear();
     }
 

@@ -73,19 +73,20 @@ impl VerdeSession {
       }
 
       // Create api route
-      match api::get_routes(payload) {
-        Ok(api) => {
-          // Start watching and serving api
-          let watch_fut = watcher.start();
-          let api_fut = warp::serve(api).run(SocketAddr::new(self.host, self.port));
-          let (watcher_res, _) = join!(watch_fut, api_fut);
-          match watcher_res {
-            Ok(()) => println!("Watcher stopped."),
-            Err(err) => println!("Watcher failed {err}"),
-          };
-        }
-        Err(api_err) => println!("Failed to start api. {api_err:?}"),
-      }
+      let api = api::get_routes(Arc::new(api::ApiState {
+        payload,
+        tree: Arc::clone(&tree),
+        project: Arc::clone(&self.project),
+      }));
+
+      // Start watching and serving api
+      let watch_fut = watcher.start();
+      let api_fut = warp::serve(api).run(SocketAddr::new(self.host, self.port));
+      let (watcher_res, _) = join!(watch_fut, api_fut);
+      match watcher_res {
+        Ok(()) => println!("Watcher stopped."),
+        Err(err) => println!("Watcher failed {err}"),
+      };
     });
 
     Ok(())
