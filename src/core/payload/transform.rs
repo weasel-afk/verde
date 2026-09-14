@@ -51,5 +51,5 @@ fn transform_script(file_path: &Path, project: &Arc<VerdeProject>) -> anyhow::Re
     roblox_path.push(path.to_string());
   }
 
-  Ok((roblox_path, Some(contents)))
+  Ok((crate::core::tree::normalise_path(roblox_path), Some(contents)))
 }

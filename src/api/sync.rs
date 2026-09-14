@@ -5,10 +5,7 @@
 pub mod filters {
   use super::handlers;
   use crate::api::ApiState;
-  use std::{
-    convert::Infallible,
-    sync::Arc,
-  };
+  use std::{convert::Infallible, sync::Arc};
   use warp::{path, Filter};
 
   /// Entry point for the sync api.
@@ -17,7 +14,9 @@ pub mod filters {
   }
 
   /// Api for requesting heartbeat status of the sync session.
-  pub fn sync_heartbeat(state: Arc<ApiState>) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+  pub fn sync_heartbeat(
+    state: Arc<ApiState>,
+  ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     path!("heartbeat")
       .and(warp::get())
       .and(with_state(state))

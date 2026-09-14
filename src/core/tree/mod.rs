@@ -118,6 +118,16 @@ impl GameTree {
   }
 }
 
+/// Normalises a project roblox path to game tree addressing by removing the
+/// implicit DataModel root segment.
+pub fn normalise_path(mut path: Vec<String>) -> Vec<String> {
+  if path.first().is_some_and(|segment| segment == "DataModel") {
+    path.remove(0);
+  }
+
+  path
+}
+
 /// Builds a skeleton game tree from a Verde project's static tree mapping.
 /// File system directories mapped via `.path` are not scanned; their scripts
 /// remain owned by the file sync pipeline.
@@ -218,6 +228,19 @@ mod tests {
     assert_eq!(GameTree::load(&path).unwrap(), tree);
     // No temporary file is left behind.
     assert!(!path.with_extension("json.tmp").exists());
+  }
+
+  #[test]
+  fn normalise_path_strips_the_data_model_root() {
+    assert_eq!(
+      normalise_path(vec![String::from("DataModel"), String::from("Workspace")]),
+      vec![String::from("Workspace")]
+    );
+    assert_eq!(
+      normalise_path(vec![String::from("Workspace")]),
+      vec![String::from("Workspace")]
+    );
+    assert!(normalise_path(vec![String::from("DataModel")]).is_empty());
   }
 
   #[test]

@@ -113,7 +113,9 @@ impl VerdeWatcher {
   /// Determines if a path is the project's game.json document.
   fn is_game_json(&self, path: &Path) -> bool {
     path.file_name().is_some_and(|name| name == GAME_FILE)
-      && path.parent().is_some_and(|parent| parent == self.project_root.as_path())
+      && path
+        .parent()
+        .is_some_and(|parent| parent == self.project_root.as_path())
   }
 }
 

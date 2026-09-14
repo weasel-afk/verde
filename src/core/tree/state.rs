@@ -148,12 +148,14 @@ fn queue_actions(payload: &Arc<RwLock<Payload>>, actions: Vec<super::diff::TreeA
   }
 }
 
-/// Collects the instance paths covered by project `.path` mappings.
+/// Collects the instance paths covered by project `.path` mappings,
+/// normalised to game tree addressing.
 fn managed_paths(project: &VerdeProject) -> Vec<Vec<String>> {
   (&project.tree)
     .into_iter()
     .filter(|node| node.path.is_some())
     .filter_map(|node| node.roblox_path.clone())
+    .map(super::normalise_path)
     .collect()
 }
 
@@ -181,7 +183,197 @@ fn strip_node(node: &mut GameNode, path: &[String], managed: &[Vec<String>]) {
 
 /// Determines if an instance path is covered by a managed path.
 fn is_managed(path: &[String], managed: &[Vec<String>]) -> bool {
-  managed.iter().any(|managed_path| {
-    path.len() >= managed_path.len() && path[..managed_path.len()] == managed_path[..]
-  })
+  managed
+    .iter()
+    .any(|managed_path| path.len() >= managed_path.len() && path[..managed_path.len()] == managed_path[..])
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::core::tree::diff::TreeAction;
+  use std::path::Path;
+
+  /// Creates a default project rooted in a tempdir.
+  fn project_in(directory: &Path) -> Arc<VerdeProject> {
+    let mut project = VerdeProject {
+      root: Some(directory.to_path_buf()),
+      ..Default::default()
+    };
+    project.tree.precalculate();
+    Arc::new(project)
+  }
+
+  #[test]
+  fn initialise_creates_skeleton_documents() {
+    let directory = tempfile::tempdir().unwrap();
+    let state = TreeState::initialise(&project_in(directory.path())).unwrap();
+
+    let document = GameTree::load(&state.game_json_path).unwrap();
+    assert!(document.root.children.contains_key("ServerScriptService"));
+    assert!(document.root.children.contains_key("ReplicatedStorage"));
+    assert_eq!(GameTree::load(&state.snapshot_path).unwrap(), document);
+  }
+
+  #[test]
+  fn initialise_resumes_from_the_snapshot() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = project_in(directory.path());
+    TreeState::initialise(&project).unwrap();
+
+    // A deleted game.json is rewritten from the persisted snapshot.
+    let state = TreeState::initialise(&project).unwrap();
+    std::fs::remove_file(&state.game_json_path).unwrap();
+    TreeState::initialise(&project).unwrap();
+    assert!(state.game_json_path.is_file());
+  }
+
+  #[test]
+  fn game_json_edits_queue_actions_and_advance_the_baseline() {
+    let directory = tempfile::tempdir().unwrap();
+    let state = TreeState::initialise(&project_in(directory.path())).unwrap();
+    let payload = Arc::new(RwLock::new(Payload::default()));
+
+    // Add a Workspace service to the document.
+    let mut document = GameTree::load(&state.game_json_path).unwrap();
+    document.root.children.insert(
+      String::from("Workspace"),
+      GameNode {
+        class_name: Some(String::from("Workspace")),
+        children: [(
+          String::from("Baseplate"),
+          GameNode {
+            class_name: Some(String::from("Part")),
+            ..Default::default()
+          },
+        )]
+        .into(),
+        ..Default::default()
+      },
+    );
+    document.save_pretty(&state.game_json_path).unwrap();
+
+    state.handle_game_json_event(&payload).unwrap();
+
+    let events = payload.read().unwrap().events.clone();
+    assert_eq!(events.len(), 2);
+    assert!(matches!(&events[0], TreeAction::Create { path, .. } if path == &vec![String::from("Workspace")]));
+    assert!(matches!(
+      &events[1],
+      TreeAction::Create { path, .. } if path == &vec![String::from("Workspace"), String::from("Baseplate")]
+    ));
+
+    // Reprocessing the same content queues nothing more.
+    state.handle_game_json_event(&payload).unwrap();
+    assert_eq!(payload.read().unwrap().events.len(), 2);
+
+    // The snapshot advanced to the new baseline.
+    assert!(GameTree::load(&state.snapshot_path)
+      .unwrap()
+      .root
+      .children
+      .contains_key("Workspace"));
+  }
+
+  #[test]
+  fn invalid_game_json_leaves_the_baseline_untouched() {
+    let directory = tempfile::tempdir().unwrap();
+    let state = TreeState::initialise(&project_in(directory.path())).unwrap();
+    let payload = Arc::new(RwLock::new(Payload::default()));
+
+    std::fs::write(&state.game_json_path, "not json").unwrap();
+    assert!(state.handle_game_json_event(&payload).is_err());
+    assert!(payload.read().unwrap().events.is_empty());
+    assert!(!GameTree::load(&state.snapshot_path)
+      .unwrap()
+      .root
+      .children
+      .contains_key("Workspace"));
+  }
+
+  #[test]
+  fn ingest_merges_pending_edits_into_the_export() {
+    let directory = tempfile::tempdir().unwrap();
+    let state = TreeState::initialise(&project_in(directory.path())).unwrap();
+    let payload = Arc::new(RwLock::new(Payload::default()));
+
+    // The AI adds a Workspace while the plugin exports a tree without one.
+    let mut document = GameTree::load(&state.game_json_path).unwrap();
+    document
+      .root
+      .children
+      .insert(String::from("Workspace"), GameNode::default());
+    document.save_pretty(&state.game_json_path).unwrap();
+
+    let export: GameTree =
+      serde_json::from_str(r#"{"formatVersion":1,"className":"DataModel","children":{"Lighting":{}}}"#).unwrap();
+
+    let pending = state.ingest_export(&export, &payload).unwrap();
+    assert_eq!(pending, 1);
+    assert_eq!(payload.read().unwrap().events.len(), 1);
+
+    // The refreshed document carries the export plus the pending edit.
+    let merged = GameTree::load(&state.game_json_path).unwrap();
+    assert!(merged.root.children.contains_key("Lighting"));
+    assert!(merged.root.children.contains_key("Workspace"));
+    assert_eq!(GameTree::load(&state.snapshot_path).unwrap(), merged);
+  }
+
+  #[test]
+  fn ingest_strips_managed_script_sources() {
+    let directory = tempfile::tempdir().unwrap();
+    let state = TreeState::initialise(&project_in(directory.path())).unwrap();
+    let payload = Arc::new(RwLock::new(Payload::default()));
+
+    // ServerScriptService is covered by the default project's src/server mapping.
+    let export: GameTree = serde_json::from_str(
+      r#"{
+        "formatVersion": 1,
+        "className": "DataModel",
+        "children": {
+          "ServerScriptService": {
+            "children": {
+              "Main": {
+                "className": "Script",
+                "properties": { "Source": "print('managed')", "Disabled": false }
+              }
+            }
+          },
+          "StarterGui": {
+            "children": {
+              "Label": {
+                "className": "Script",
+                "properties": { "Source": "print('unmanaged')" }
+              }
+            }
+          }
+        }
+      }"#,
+    )
+    .unwrap();
+
+    state.ingest_export(&export, &payload).unwrap();
+
+    let merged = GameTree::load(&state.game_json_path).unwrap();
+    let managed = merged
+      .root
+      .children
+      .get("ServerScriptService")
+      .unwrap()
+      .children
+      .get("Main")
+      .unwrap();
+    assert!(!managed.properties.contains_key("Source"));
+    assert!(managed.properties.contains_key("Disabled"));
+
+    let unmanaged = merged
+      .root
+      .children
+      .get("StarterGui")
+      .unwrap()
+      .children
+      .get("Label")
+      .unwrap();
+    assert!(unmanaged.properties.contains_key("Source"));
+  }
 }

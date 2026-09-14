@@ -5,10 +5,7 @@
 pub mod filters {
   use super::handlers;
   use crate::api::ApiState;
-  use std::{
-    convert::Infallible,
-    sync::Arc,
-  };
+  use std::{convert::Infallible, sync::Arc};
   use warp::{body, path, Filter};
 
   /// Entry point for the tree api.
@@ -115,7 +112,12 @@ mod handlers {
     pub message: String,
   }
 
-  pub async fn connect(_request: ConnectRequest, state: Arc<ApiState>) -> Result<impl warp::Reply, Infallible> {
+  pub async fn connect(request: ConnectRequest, state: Arc<ApiState>) -> Result<impl warp::Reply, Infallible> {
+    println!(
+      "Plugin connected (version {:?})",
+      request.plugin_version.unwrap_or_default()
+    );
+
     Ok(json(&ConnectResponse {
       status: "ok",
       name: state.project.name.clone(),
@@ -133,7 +135,10 @@ mod handlers {
       return Ok(with_status(
         json(&ErrorResponse {
           status: "error",
-          message: format!("Unsupported format version {} (expected {})", tree.format_version, FORMAT_VERSION),
+          message: format!(
+            "Unsupported format version {} (expected {})",
+            tree.format_version, FORMAT_VERSION
+          ),
         }),
         StatusCode::BAD_REQUEST,
       ));
