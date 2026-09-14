@@ -13,6 +13,19 @@ game.json edit → the Verde extension diffs it against .verde/snapshot.json
 - **`game.json` is the source of truth.** Removing a node destroys that instance in Studio (one undo step per applied save).
 - On every plugin (re)connect the plugin exports the live tree into `game.json`, merging your queued edits on top. Manual changes made *in Studio* flow back into `game.json` at that point, or on demand via the **Verde: Export game.json from Studio** command.
 
+## MCP tools (preferred when available)
+
+If the Verde MCP server is connected (check with the `verde_status` tool), prefer it over raw file edits: it confirms delivery synchronously and reports per-action errors, so you don't have to poll `.verde/snapshot.json`.
+
+- `verde_status` — plugin connected? queue length? baseline initialised? Call this first.
+- `get_game_tree` — read the tree. With the plugin connected this is **live** (and refreshes `game.json`); without it you get the document with `stale: true`. Use `mode: "summary"` (names/classes/child counts) to orient before full reads, and `path`/`maxDepth` to bound size.
+- `apply_tree_actions` — create/update/delete by path, same semantics and rules as editing `game.json` (see below), applied as one undo step. The whole batch is validated before anything is applied; an invalid action returns the offending action and nothing lands.
+  - Response statuses: `applied` (with plugin-reported counts and any per-action failures), `queued-offline` (no plugin connected; lands on reconnect), `queued-retry` (delivery failed, retried automatically), `no-change` (e.g. before the first export, the edit only lands in the file).
+  - The reported counts describe the **delivered diff**, not an echo of your submitted actions — they can differ in shape while converging to the same result.
+- `undo` / `redo` — Studio change-history only; they do **not** rewind `game.json`. Follow with `get_game_tree` to refresh the document.
+
+When MCP is not available, edit `game.json` directly as described below — both surfaces share the same baseline and cannot fight each other.
+
 ## Before you edit
 
 1. Read `game.json` to see the current tree. If it's missing or a skeleton (no children anywhere), the plugin hasn't exported yet — ask the user to connect it in Studio.

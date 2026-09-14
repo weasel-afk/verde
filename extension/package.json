@@ -11,7 +11,7 @@
   },
   "icon": "logo.png",
   "engines": {
-    "vscode": "^1.74.0"
+    "vscode": "^1.85.0"
   },
   "categories": [
     "Other"
@@ -84,6 +84,16 @@
           "type": "string",
           "default": "game.json",
           "description": "Workspace-relative path of the game tree document used by game.json sync"
+        },
+        "verde.mcp.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run a local MCP server (loopback only) exposing Verde's live Studio tree sync as tools for AI agents. Tree tools also require verde.gameJsonSync."
+        },
+        "verde.mcp.port": {
+          "type": "number",
+          "default": 9124,
+          "description": "Port for the local MCP HTTP server (bound to 127.0.0.1)"
         }
       }
     },
@@ -212,6 +222,11 @@
         "command": "verde.exportGameTree",
         "title": "Export game.json from Studio",
         "category": "Verde"
+      },
+      {
+        "command": "verde.showMcpInfo",
+        "title": "Show MCP Server Info",
+        "category": "Verde"
       }
     ],
     "keybindings": [
@@ -319,7 +334,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "@types/vscode": "^1.74.0",
+    "@types/vscode": "^1.85.0",
     "@types/ws": "^8.18.1",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
@@ -331,7 +346,9 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "fzy.js": "^0.4.1",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "zod": "^3.25.76"
   }
 }

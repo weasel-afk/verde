@@ -12,11 +12,13 @@ import { LuauExecutionService } from "./luauExecutionService";
 import { VerdeApi } from "./api";
 import { invalidateCustomIconCache, resolveIconUri } from "./iconResolver";
 import { GameJsonSync } from "./gameJsonSync";
+import { McpBridge } from "./mcp/server";
 
 import * as fzy from "fzy.js";
 
 let backend: VerdeBackend | null = null;
 let gameJsonSync: GameJsonSync | null = null;
+let mcpBridge: McpBridge | null = null;
 let sourcemapParser: SourcemapParser;
 let propertiesViewProvider: PropertiesViewProvider;
 let explorerViewProvider: ExplorerViewProvider;
@@ -225,6 +227,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<VerdeA
 		vscode.workspace.onDidChangeConfiguration((event) => {
 			if (event.affectsConfiguration("verde.gameJsonSync") || event.affectsConfiguration("verde.gameJsonPath")) {
 				configureGameJsonSync(outputChannel);
+			}
+
+			if (event.affectsConfiguration("verde.mcp.enabled") || event.affectsConfiguration("verde.mcp.port")) {
+				configureMcpBridge(outputChannel);
 			}
 
 			if (!event.affectsConfiguration("verde.iconDirectory")) {
@@ -490,6 +496,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<VerdeA
 				return;
 			}
 			await gameJsonSync.exportFromStudio();
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("verde.showMcpInfo", async () => {
+			if (!mcpBridge?.running) {
+				vscode.window.showWarningMessage("Verde: MCP server is not running (enable verde.mcp.enabled).");
+				return;
+			}
+			const endpoint = mcpBridge.endpoint;
+			const choice = await vscode.window.showInformationMessage(
+				`Verde MCP server: ${endpoint}`,
+				"Copy claude mcp add command",
+			);
+			if (choice) {
+				vscode.env.clipboard.writeText(`claude mcp add --transport http verde ${endpoint}`);
+			}
 		})
 	);
 
@@ -1074,6 +1097,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<VerdeA
 	const autoStart = config.get<boolean>("autoStart", true);
 
 	configureGameJsonSync(outputChannel);
+	configureMcpBridge(outputChannel);
 
 	if (autoStart) {
 		try {
@@ -1091,6 +1115,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<VerdeA
 }
 
 export async function deactivate() {
+	if (mcpBridge) {
+		mcpBridge.dispose();
+		mcpBridge = null;
+	}
 	if (gameJsonSync) {
 		gameJsonSync.dispose();
 		gameJsonSync = null;
@@ -1120,4 +1148,36 @@ function configureGameJsonSync(outputChannel: vscode.OutputChannel): void {
 			gameJsonSync.handleClientConnected();
 		}
 	}
+}
+
+/** Creates or tears down the MCP bridge on setting changes. */
+function configureMcpBridge(outputChannel: vscode.OutputChannel): void {
+	if (!backend) {
+		return;
+	}
+
+	if (mcpBridge) {
+		mcpBridge.dispose();
+		mcpBridge = null;
+	}
+
+	const config = vscode.workspace.getConfiguration("verde");
+	if (!config.get<boolean>("mcp.enabled", false)) {
+		return;
+	}
+
+	const port = config.get<number>("mcp.port", 9124);
+	mcpBridge = new McpBridge({
+		backend,
+		getGameJsonSync: () => gameJsonSync,
+		outputChannel,
+		port,
+		wsPort: () => vscode.workspace.getConfiguration("verde").get<number>("port", 9000),
+	});
+	mcpBridge.start().then(undefined, (err) => {
+		mcpBridge = null;
+		const message = `MCP server failed to start (${err instanceof Error ? err.message : String(err)}); is port ${port} in use?`;
+		vscode.window.showWarningMessage(`Verde: ${message}`);
+		outputChannel.appendLine(`[verde/mcp] ${message}`);
+	});
 }
