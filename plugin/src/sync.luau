@@ -37,6 +37,8 @@ function Sync.connect()
         store.add("Toasts", {
             Message = `Failed to connect: {err}`,
             Severity = "Error",
+            Time = os.time(),
+            Lifetime = 5,
         })
         return
     end

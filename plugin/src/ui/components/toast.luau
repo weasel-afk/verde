@@ -26,6 +26,7 @@ return function(_props)
     return root(function(_destroy)
         local instance = source()
         local size: UDim2 = text(_props.Message)
+        local lifetime = _props.Lifetime or 5
         local yOffset = 0
         local position = source(UDim2.new(1, size.X.Offset, 1, 0))
 
@@ -73,8 +74,8 @@ return function(_props)
             end,
 
             action(function(_instance: ImageButton)
-                if _props.Lifetime > 0 then
-                    timeoutThread = task.delay(_props.Lifetime, kill)
+                if lifetime > 0 then
+                    timeoutThread = task.delay(lifetime, kill)
                 end
                 instance(_instance)
             end),
@@ -131,7 +132,7 @@ return function(_props)
                 Size = lerp(
                     UDim2.fromOffset(size.X.Offset, CORNER_RADIUS),
                     UDim2.fromOffset(0, CORNER_RADIUS),
-                    _props.Lifetime or 1
+                    lifetime
                 ),
 
                 create("Frame") {
