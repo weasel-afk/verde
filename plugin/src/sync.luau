@@ -49,7 +49,12 @@ function Sync.connect()
     -- Export the game tree, then keep applying heartbeats until disconnect.
     local interval = defaults.HEARTBEAT_INTERVAL
     task.spawn(function()
-        session:postTree(encoder.export(session.Services))
+        local exported, err = pcall(function()
+            session:postTree(encoder.export(session.Services))
+        end)
+        if not exported then
+            warn(`Verde failed to export the game tree: {err}`)
+        end
 
         local failures = 0
         while session.Connected do

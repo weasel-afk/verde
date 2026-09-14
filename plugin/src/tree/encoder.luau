@@ -74,7 +74,9 @@ function Encoder.encodeValue(value: unknown): types.PropertyValue?
         }
     elseif valueType == "EnumItem" then
         local item = value :: EnumItem
-        return { type = "Enum", enumType = item.EnumType.Name, value = item.Name }
+        -- Enum types have no Name property; derive it from tostring ("Enum.PartType").
+        local enumName = tostring(item.EnumType)
+        return { type = "Enum", enumType = string.sub(enumName, #"Enum." + 1), value = item.Name }
     elseif valueType == "CFrame" then
         local cframe = value :: CFrame
         local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = cframe:GetComponents()
@@ -150,8 +152,8 @@ function encodeNode(instance: Instance, skipSelf: boolean?): types.GameNode
             return (instance :: any)[name]
         end)
         if ok then
-            local encoded = Encoder.encodeValue(value)
-            if encoded ~= nil then
+            local encodedOk, encoded = pcall(Encoder.encodeValue, value)
+            if encodedOk and encoded ~= nil then
                 node.properties[name] = encoded
             end
         end
