@@ -150,13 +150,15 @@ function Decoder.apply(actions: { types.TreeAction }): { applied: number, failed
             elseif action.action == "change" then
                 local instance = Decoder.resolve(action.path)
                 assert(instance, "instance not found")
-(instance :: any).Source = action.value
+                local target = instance :: any
+                target.Source = action.value
             elseif action.action == "delete" then
                 assert(#action.path > 1, "refusing to delete a top level service")
 
                 local instance = Decoder.resolve(action.path)
                 assert(instance, "instance not found")
-(instance :: Instance):Destroy()
+                local target = instance :: Instance
+                target:Destroy()
             else
                 error(`unknown action {action.action}`)
             end
