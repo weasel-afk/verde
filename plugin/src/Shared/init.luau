@@ -6,6 +6,7 @@ local shared = {
 	Icons = require(script.Icons),
 	InstanceMap = require(script.InstanceMap),
 	PluginButton = require(script.PluginButton),
+	PluginRoot = require(script.PluginRoot),
 	PropertyTracker = require(script.PropertyTracker),
 	Services = require(script.Services),
 	SettingsPanel = require(script.SettingsPanel),

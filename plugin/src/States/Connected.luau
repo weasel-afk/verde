@@ -13,6 +13,7 @@ local Icons = SharedFolder.Icons
 local State = SharedFolder.State
 local Operations = require(script.Parent.Parent.Operations)
 local SearchIndex = require(script.Parent.Parent.SearchIndex)
+local Encoder = require(script.Parent.Parent.Tree.Encoder)
 
 type Client = WebSocketClient.WebSocketClientInstance
 
@@ -729,6 +730,24 @@ local _messageHandlers = {
 	["request_snapshot"] = function(client: Client, data: any)
 		local full = data and data.full == true
 		_sendSnapshot(client, full)
+	end,
+	["request_game_tree"] = function(client: Client, _data: any)
+		-- The walk yields periodically, so it runs off the message thread;
+		-- the result is pushed as a game_tree message (not an operation) so
+		-- the extension is not bound by operation timeouts.
+		task.spawn(function()
+			local tree = Encoder.export(SharedFolder.PluginRoot.script)
+
+			if not client.connected then
+				return
+			end
+
+			if tree then
+				_encodeAndSend(client, { type = "game_tree", payload = tree })
+			else
+				_encodeAndSend(client, { type = "game_tree_too_big" })
+			end
+		end)
 	end,
 	["request_children"] = function(client: Client, data: any)
 		_handleRequestChildren(client, data.parentIds or {})

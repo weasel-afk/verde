@@ -1,9 +1,12 @@
 {
-  "name": "Verde",
+  "name": "Verde-dev",
   "tree": {
     "$className": "DataModel",
     "ServerStorage": {
-      "$path": "src/ServerStorage"
+      "$className": "ServerStorage",
+      "Verde": {
+        "$path": "src"
+      }
     }
   }
 }
