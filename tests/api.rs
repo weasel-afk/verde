@@ -34,7 +34,7 @@ fn state_in(directory: &Path) -> Arc<ApiState> {
 }
 
 #[tokio::test]
-async fn heartbeat_returns_queued_actions_in_order_and_clears() {
+async fn heartbeat_retains_queued_actions_until_acknowledged() {
   let directory = tempfile::tempdir().unwrap();
   let state = state_in(directory.path());
   let filter = api::get_routes(Arc::clone(&state));
@@ -59,8 +59,27 @@ async fn heartbeat_returns_queued_actions_in_order_and_clears() {
   assert_eq!(events.len(), 2);
   assert_eq!(events[0]["action"], "create");
   assert_eq!(events[1]["action"], "delete");
+  let cursor = body["cursor"].as_u64().unwrap();
 
-  // The payload was cleared by the read.
+  // Reading again before acknowledgement returns the same actions.
+  let response = warp::test::request()
+    .method("GET")
+    .path("/heartbeat")
+    .reply(&filter)
+    .await;
+  let body = serde_json::from_slice::<serde_json::Value>(response.body()).unwrap();
+  assert_eq!(body["events"].as_array().unwrap().len(), 2);
+  assert_eq!(body["cursor"], cursor);
+
+  // An explicit acknowledgement removes only the delivered actions.
+  let response = warp::test::request()
+    .method("POST")
+    .path("/heartbeat")
+    .json(&serde_json::json!({ "cursor": cursor }))
+    .reply(&filter)
+    .await;
+  assert_eq!(response.status(), 200);
+
   let response = warp::test::request()
     .method("GET")
     .path("/heartbeat")
@@ -179,4 +198,33 @@ async fn tree_ingest_rejects_unsupported_format_versions() {
     serde_json::from_slice::<serde_json::Value>(response.body()).unwrap()["status"],
     "error"
   );
+}
+
+#[tokio::test]
+async fn tree_ingest_rejects_invalid_game_json_without_changing_state_files() {
+  let directory = tempfile::tempdir().unwrap();
+  let state = state_in(directory.path());
+  let filter = api::get_routes(Arc::clone(&state));
+  let game_json_path = directory.path().join("game.json");
+  let snapshot_path = directory.path().join(".verde").join("snapshot.json");
+
+  std::fs::write(&game_json_path, "not json").unwrap();
+  let game_before = std::fs::read(&game_json_path).unwrap();
+  let snapshot_before = std::fs::read(&snapshot_path).unwrap();
+
+  let response = warp::test::request()
+    .method("POST")
+    .path("/tree")
+    .json(&serde_json::json!({
+      "formatVersion": 1,
+      "className": "DataModel",
+      "children": { "Workspace": {} }
+    }))
+    .reply(&filter)
+    .await;
+
+  assert_eq!(response.status(), 500);
+  assert_eq!(std::fs::read(&game_json_path).unwrap(), game_before);
+  assert_eq!(std::fs::read(&snapshot_path).unwrap(), snapshot_before);
+  assert!(state.payload.read().unwrap().events.is_empty());
 }

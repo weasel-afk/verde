@@ -10,7 +10,10 @@ use crate::core::project::VerdeProject;
 use anyhow::{Context, Result};
 use std::{
   path::PathBuf,
-  sync::{Arc, RwLock},
+  sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, RwLock,
+  },
 };
 
 /// The directory storing Verde sync state within a project.
@@ -34,6 +37,9 @@ pub struct TreeState {
   /// The baseline the next game.json diff is taken against.
   baseline: RwLock<GameTree>,
 
+  /// Whether the baseline reflects a persisted Studio export.
+  baseline_initialised: AtomicBool,
+
   /// Instance paths covered by project `.path` mappings.
   /// Their script source is owned by the file sync pipeline.
   managed_paths: Vec<Vec<String>>,
@@ -53,6 +59,7 @@ impl TreeState {
       game_json_path: root.join(GAME_FILE),
       snapshot_path: root.join(STATE_DIRECTORY).join(SNAPSHOT_FILE),
       baseline: RwLock::new(super::skeleton_from_project(project)),
+      baseline_initialised: AtomicBool::new(true),
       managed_paths: managed_paths(project),
       project: Arc::clone(project),
     };
@@ -67,6 +74,7 @@ impl TreeState {
       // A document exists without a snapshot, so deletes are unavailable
       // until the plugin exports a tree to establish a baseline.
       eprintln!("Found game.json without a snapshot; deletes are unavailable until the plugin exports a tree.");
+      state.baseline_initialised.store(false, Ordering::Release);
     } else {
       let skeleton = state.baseline.read().unwrap().clone();
       skeleton.save_pretty(&state.snapshot_path)?;
@@ -79,6 +87,12 @@ impl TreeState {
   /// Handles a game.json change: diffs the document against the baseline,
   /// queues the resulting actions for the plugin, and advances the baseline.
   pub fn handle_game_json_event(&self, payload: &Arc<RwLock<Payload>>) -> Result<()> {
+    // Without a Studio-derived baseline, the existing document cannot safely
+    // be interpreted as a set of removals. The first export merges it below.
+    if !self.baseline_initialised.load(Ordering::Acquire) {
+      return Ok(());
+    }
+
     let target = GameTree::load(&self.game_json_path)?;
     let mut baseline = self.baseline.write().unwrap();
     let actions = diff_trees(&baseline, &target);
@@ -99,22 +113,26 @@ impl TreeState {
   ///
   /// Returns the number of pending actions queued for Studio.
   pub fn ingest_export(&self, export: &GameTree, payload: &Arc<RwLock<Payload>>) -> Result<usize> {
+    let target = GameTree::load(&self.game_json_path).with_context(|| {
+      format!(
+        "Failed to read {} while merging a tree export",
+        self.game_json_path.display()
+      )
+    })?;
     let mut baseline = self.baseline.write().unwrap();
+    let initialised = self.baseline_initialised.load(Ordering::Acquire);
 
     // Pending edits made against the previous baseline.
-    let pending = match GameTree::load(&self.game_json_path) {
-      Ok(target) => diff_trees(&baseline, &target),
-      Err(error) => {
-        eprintln!("Failed to read game.json while merging a tree export: {error:#}");
-        Vec::new()
-      }
-    };
+    let mut pending = diff_trees(if initialised { &baseline } else { export }, &target);
+    if !initialised {
+      pending.retain(|action| !matches!(action, super::diff::TreeAction::Delete { .. }));
+    }
 
     // The export becomes the new baseline, with pending edits layered on top.
     // Actions for paths absent from the export are tolerated as no-ops.
     let mut merged = export.clone();
-    strip_managed_sources(&mut merged, &self.managed_paths);
     apply_actions(&mut merged.root, &pending)?;
+    strip_managed_sources(&mut merged, &self.managed_paths);
 
     if !pending.is_empty() {
       queue_actions(payload, pending.clone());
@@ -123,6 +141,7 @@ impl TreeState {
     merged.save_pretty(&self.game_json_path)?;
     merged.save_pretty(&self.snapshot_path)?;
     *baseline = merged;
+    self.baseline_initialised.store(true, Ordering::Release);
 
     Ok(pending.len())
   }
@@ -139,13 +158,9 @@ impl TreeState {
   }
 }
 
-/// Queues actions into the sync payload, logging when the payload is locked.
+/// Queues actions into the sync payload, waiting for any in-progress delivery.
 fn queue_actions(payload: &Arc<RwLock<Payload>>, actions: Vec<super::diff::TreeAction>) {
-  if let Ok(mut events) = payload.try_write() {
-    events.extend_actions(actions);
-  } else {
-    eprintln!("Failed to queue game tree actions; the payload is locked.");
-  }
+  payload.write().unwrap().extend_actions(actions);
 }
 
 /// Collects the instance paths covered by project `.path` mappings,
@@ -289,6 +304,62 @@ mod tests {
       .root
       .children
       .contains_key("Workspace"));
+  }
+
+  #[test]
+  fn existing_document_without_snapshot_waits_for_export_and_suppresses_deletes() {
+    let directory = tempfile::tempdir().unwrap();
+    let game_json_path = directory.path().join(GAME_FILE);
+    let target: GameTree = serde_json::from_str(
+      r#"{"formatVersion":1,"className":"DataModel","children":{"Workspace":{"children":{"Wanted":{}}}}}"#,
+    )
+    .unwrap();
+    target.save_pretty(&game_json_path).unwrap();
+
+    let state = TreeState::initialise(&project_in(directory.path())).unwrap();
+    let payload = Arc::new(RwLock::new(Payload::default()));
+    assert!(!state.baseline_initialised.load(Ordering::Acquire));
+    assert!(!state.snapshot_path.exists());
+
+    state.handle_game_json_event(&payload).unwrap();
+    assert!(payload.read().unwrap().events.is_empty());
+    assert!(!state.snapshot_path.exists());
+
+    let export: GameTree = serde_json::from_str(
+      r#"{"formatVersion":1,"className":"DataModel","children":{"Workspace":{"children":{"Existing":{}}}}}"#,
+    )
+    .unwrap();
+    state.ingest_export(&export, &payload).unwrap();
+
+    let events = payload.read().unwrap().events.clone();
+    assert_eq!(events.len(), 1);
+    assert!(matches!(
+      &events[0],
+      TreeAction::Create { path, .. }
+        if path == &vec![String::from("Workspace"), String::from("Wanted")]
+    ));
+    let merged = GameTree::load(&game_json_path).unwrap();
+    let workspace = merged.root.children.get("Workspace").unwrap();
+    assert!(workspace.children.contains_key("Existing"));
+    assert!(workspace.children.contains_key("Wanted"));
+    assert!(state.baseline_initialised.load(Ordering::Acquire));
+
+    // Once the export establishes the baseline, normal deletes resume.
+    let mut document = merged;
+    document
+      .root
+      .children
+      .get_mut("Workspace")
+      .unwrap()
+      .children
+      .remove("Existing");
+    document.save_pretty(&game_json_path).unwrap();
+    state.handle_game_json_event(&payload).unwrap();
+    assert!(payload.read().unwrap().events.iter().any(|action| matches!(
+      action,
+      TreeAction::Delete { path }
+        if path == &vec![String::from("Workspace"), String::from("Existing")]
+    )));
   }
 
   #[test]

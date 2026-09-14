@@ -32,8 +32,9 @@ local SKIPPED_CLASSES = {
     Player = true,
 }
 
--- The plugin's own development tree in Workspace.
-local SELF_NAME = "Verde"
+-- The plugin's own tree is parented to Workspace only in development builds.
+local pluginTree = script.Parent.Parent
+local DEVELOPMENT_TREE = if pluginTree.Parent == workspace then pluginTree else nil
 
 local Encoder = {}
 
@@ -132,8 +133,7 @@ function Encoder.export(extraServices: { string }?): types.GameTree
     local children = {}
     for _, service in game:GetChildren() do
         if allowed[service.Name] then
-            local skipSelf = service.Name == "Workspace"
-            children[service.Name] = encodeNode(service, skipSelf)
+            children[service.Name] = encodeNode(service)
         end
     end
 
@@ -148,7 +148,7 @@ end
 --[[
     Encodes a single instance and its descendants.
 ]]
-function encodeNode(instance: Instance, skipSelf: boolean?): types.GameNode
+function encodeNode(instance: Instance): types.GameNode
     local node: types.GameNode = {
         className = if instance.ClassName ~= instance.Name then instance.ClassName else nil,
         properties = {},
@@ -172,11 +172,14 @@ function encodeNode(instance: Instance, skipSelf: boolean?): types.GameNode
         if SKIPPED_CLASSES[child.ClassName] then
             continue
         end
-        if skipSelf and child.Name == SELF_NAME then
+        if child == DEVELOPMENT_TREE then
             continue
         end
 
         -- Children are keyed by name; duplicates cannot be represented.
+        if node.children[child.Name] ~= nil then
+            error(`cannot export duplicate children named {child.Name} under {instance:GetFullName()}`)
+        end
         node.children[child.Name] = encodeNode(child)
     end
 

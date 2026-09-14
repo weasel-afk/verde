@@ -20,15 +20,38 @@ pub struct Payload {
   /// The last time the payload was edited.
   last_update: Option<u64>,
 
-  /// The last time the payload was read + cleared.
+  /// The last time the payload was delivered.
   last_read: Option<u64>,
+
+  /// The absolute cursor of the first queued event.
+  #[serde(skip)]
+  acknowledged_cursor: u64,
+
+  /// The furthest cursor returned by a heartbeat response.
+  #[serde(skip)]
+  delivered_cursor: u64,
 }
 
 impl Payload {
-  /// Clears all the values in the payload.
-  pub fn clear(&mut self) {
-    self.events.clear();
+  /// Clones the currently queued actions for delivery and returns the cursor
+  /// through which they can be acknowledged.
+  pub fn deliver(&mut self) -> (Self, u64) {
+    self.delivered_cursor = self.acknowledged_cursor + self.events.len() as u64;
     self.last_read = Some(current_millis());
+    (self.clone(), self.delivered_cursor)
+  }
+
+  /// Removes actions through a cursor that has previously been delivered.
+  /// Returns false for cursors outside the delivered range.
+  pub fn acknowledge(&mut self, cursor: u64) -> bool {
+    if cursor < self.acknowledged_cursor || cursor > self.delivered_cursor {
+      return false;
+    }
+
+    let acknowledged = (cursor - self.acknowledged_cursor) as usize;
+    self.events.drain(..acknowledged);
+    self.acknowledged_cursor = cursor;
+    true
   }
 
   /// Adds a new Roblox instance action.
@@ -120,5 +143,38 @@ mod tests {
         path: vec![String::from("A")]
       }
     );
+  }
+
+  #[test]
+  fn acknowledgement_only_removes_delivered_actions() {
+    let mut payload = Payload::default();
+    payload.extend_actions(vec![PayloadAction::Delete {
+      path: vec![String::from("A")],
+    }]);
+
+    let (_, cursor) = payload.deliver();
+    payload.extend_actions(vec![PayloadAction::Delete {
+      path: vec![String::from("B")],
+    }]);
+
+    assert!(payload.acknowledge(cursor));
+    assert_eq!(payload.events.len(), 1);
+    assert_eq!(
+      payload.events[0],
+      PayloadAction::Delete {
+        path: vec![String::from("B")]
+      }
+    );
+  }
+
+  #[test]
+  fn acknowledgement_rejects_an_undelivered_cursor() {
+    let mut payload = Payload::default();
+    payload.extend_actions(vec![PayloadAction::Delete {
+      path: vec![String::from("A")],
+    }]);
+
+    assert!(!payload.acknowledge(1));
+    assert_eq!(payload.events.len(), 1);
   }
 }

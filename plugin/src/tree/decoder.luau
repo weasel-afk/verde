@@ -220,17 +220,29 @@ function applyProperties(path: { string }, props: { [string]: types.PropertyValu
 end
 
 --[[
-    Applies a property map to an instance, skipping values that fail to
-    decode or set.
+    Applies a property map to an instance and reports every value that fails
+    to decode or set after the remaining properties have been attempted.
 ]]
 function applyPropertiesTo(instance: Instance, props: { [string]: types.PropertyValue })
+    local failures = {}
     for name, value in props do
-        local ok, decoded = Decoder.decodeValue(value)
-        if ok then
-            pcall(function()
+        local decodeCallOk, decodedOk, decoded = pcall(Decoder.decodeValue, value)
+        if not decodeCallOk then
+            table.insert(failures, `{name}: {decodedOk}`)
+        elseif not decodedOk then
+            table.insert(failures, `{name}: {decoded}`)
+        else
+            local assigned, err = pcall(function()
                 (instance :: any)[name] = decoded
             end)
+            if not assigned then
+                table.insert(failures, `{name}: {err}`)
+            end
         end
+    end
+
+    if #failures > 0 then
+        error(table.concat(failures, "; "), 0)
     end
 end
 

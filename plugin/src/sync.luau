@@ -49,9 +49,11 @@ function Sync.connect()
     -- Export the game tree, then keep applying heartbeats until disconnect.
     local interval = defaults.HEARTBEAT_INTERVAL
     task.spawn(function()
-        local exported, err = pcall(function()
-            session:postTree(encoder.export(session.Services))
+        local requestOk, response, requestErr = pcall(function()
+            return session:postTree(encoder.export(session.Services))
         end)
+        local exported = requestOk and response ~= nil
+        local err = if requestOk then requestErr else response
         if not exported then
             warn(`Verde failed to export the game tree: {err}`)
         end
@@ -61,10 +63,17 @@ function Sync.connect()
             local payload = session:fetchHeartbeat()
             if payload then
                 failures = 0
+                store.set("ConnectionStatus", "Connected")
                 if payload.events and #payload.events > 0 then
                     local result = decoder.apply(payload.events)
                     if #result.failed > 0 then
                         warn(`Verde failed to apply {#result.failed} actions:\n{table.concat(result.failed, "\n")}`)
+                    end
+                end
+                if payload.cursor ~= nil then
+                    local _, ackErr = session:ackHeartbeat(payload.cursor)
+                    if ackErr then
+                        warn(`Verde failed to acknowledge heartbeat: {ackErr}`)
                     end
                 end
             else

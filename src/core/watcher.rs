@@ -90,7 +90,7 @@ impl VerdeWatcher {
   async fn transform_event(&mut self, event: DebouncedEvent) -> anyhow::Result<()> {
     // We only want to track file changes.
     if let Some(file_path) = event.paths.first() {
-      if !file_path.is_file() {
+      if !should_process(file_path, &event.kind) {
         return Ok(());
       }
 
@@ -104,15 +104,13 @@ impl VerdeWatcher {
         return Ok(());
       }
 
-      if let Ok(mut payload) = self.payload.try_write() {
-        // A single untransformable file must not stop the watch loop for
-        // the remaining files. Unmapped files (logs, state, anything else
-        // in the project root) are skipped silently.
-        match transform_file(file_path, &event.kind, &self.project) {
-          Ok(Some(file)) => payload.add_payload(file),
-          Ok(None) => {}
-          Err(error) => eprintln!("Failed to transform {}: {error:#}", file_path.display()),
-        }
+      // A single untransformable file must not stop the watch loop for
+      // the remaining files. Unmapped files (logs, state, anything else
+      // in the project root) are skipped silently.
+      match transform_file(file_path, &event.kind, &self.project) {
+        Ok(Some(file)) => self.payload.write().unwrap().add_payload(file),
+        Ok(None) => {}
+        Err(error) => eprintln!("Failed to transform {}: {error:#}", file_path.display()),
       }
     }
 
@@ -126,6 +124,12 @@ impl VerdeWatcher {
         .parent()
         .is_some_and(|parent| parent == self.project_root.as_path())
   }
+}
+
+/// Determines whether an event can represent a file change. Removed files no
+/// longer exist by the time the debouncer emits their event.
+fn should_process(path: &Path, kind: &notify::EventKind) -> bool {
+  matches!(kind, notify::EventKind::Remove(_)) || path.is_file()
 }
 
 /// Creates a new file system watcher piping events to the watch transmitter.
@@ -160,4 +164,18 @@ pub fn create_watcher(
   }
 
   Ok(debouncer)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use notify::event::{ModifyKind, RemoveKind};
+
+  #[test]
+  fn removed_files_are_processed_after_they_stop_existing() {
+    let missing = Path::new("missing.server.luau");
+
+    assert!(should_process(missing, &notify::EventKind::Remove(RemoveKind::File)));
+    assert!(!should_process(missing, &notify::EventKind::Modify(ModifyKind::Any)));
+  }
 }
