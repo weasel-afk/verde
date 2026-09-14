@@ -6,11 +6,23 @@ pub mod filters {
   use super::handlers;
   use crate::api::ApiState;
   use std::{convert::Infallible, sync::Arc};
-  use warp::{path, Filter};
+  use warp::{body, path, Filter};
 
   /// Entry point for the sync api.
   pub fn sync(state: Arc<ApiState>) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-    sync_heartbeat(state)
+    sync_heartbeat(Arc::clone(&state)).or(sync_acknowledge(state))
+  }
+
+  /// Api for acknowledging actions returned by a heartbeat.
+  pub fn sync_acknowledge(
+    state: Arc<ApiState>,
+  ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    path!("heartbeat")
+      .and(warp::post())
+      .and(body::content_length_limit(1024))
+      .and(body::json())
+      .and(with_state(state))
+      .and_then(handlers::sync_acknowledge)
   }
 
   /// Api for requesting heartbeat status of the sync session.
@@ -31,14 +43,49 @@ pub mod filters {
 
 mod handlers {
   use crate::api::ApiState;
+  use crate::core::payload::Payload;
+  use serde::{Deserialize, Serialize};
   use std::{convert::Infallible, sync::Arc};
+  use warp::{http::StatusCode, reply::with_status};
+
+  #[derive(Serialize)]
+  struct HeartbeatResponse {
+    #[serde(flatten)]
+    payload: Payload,
+    cursor: u64,
+  }
+
+  #[derive(Deserialize)]
+  pub struct AcknowledgeRequest {
+    cursor: u64,
+  }
+
+  #[derive(Serialize)]
+  struct AcknowledgeResponse {
+    status: &'static str,
+  }
 
   pub async fn sync_heartbeat(state: Arc<ApiState>) -> Result<impl warp::Reply, Infallible> {
-    let r = state.payload.read().unwrap().clone();
-    if let Ok(mut w) = state.payload.try_write() {
-      w.clear();
-    }
+    let (payload, cursor) = state.payload.write().unwrap().deliver();
 
-    Ok(warp::reply::json(&r))
+    Ok(warp::reply::json(&HeartbeatResponse { payload, cursor }))
+  }
+
+  pub async fn sync_acknowledge(
+    request: AcknowledgeRequest,
+    state: Arc<ApiState>,
+  ) -> Result<impl warp::Reply, Infallible> {
+    let acknowledged = state.payload.write().unwrap().acknowledge(request.cursor);
+    let status = if acknowledged { "ok" } else { "error" };
+    let status_code = if acknowledged {
+      StatusCode::OK
+    } else {
+      StatusCode::BAD_REQUEST
+    };
+
+    Ok(with_status(
+      warp::reply::json(&AcknowledgeResponse { status }),
+      status_code,
+    ))
   }
 }

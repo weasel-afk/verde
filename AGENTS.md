@@ -15,7 +15,7 @@ game.json edit → verde serve diffs it against .verde/snapshot.json
 ## Before you edit
 
 1. Read `game.json` to see the current tree. If it's a skeleton (services only, no children), the plugin hasn't exported yet — ask the user to connect it in Studio.
-2. Never call `GET /heartbeat` yourself — it consumes the action queue the plugin polls.
+2. Never call `GET /heartbeat` yourself — it is part of the plugin's delivery and acknowledgement protocol.
 3. To confirm your edit was processed: after saving, wait a moment and check that `.verde/snapshot.json` now matches your edit (the snapshot is the applied baseline). If it doesn't advance, the plugin isn't connected.
 
 ## Format

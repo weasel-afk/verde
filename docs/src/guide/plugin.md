@@ -22,7 +22,7 @@ The plugin directory is itself a Roblox project. With the toolchain installed ([
 ```sh
 cd plugin
 rokit install        # installs rojo, StyLua and pesde (approve each tool when prompted)
-pesde install        # installs Luau dependencies into packages/
+pesde install        # installs Luau dependencies into roblox_packages/
 rojo build VerdePlugin.project.json -o Verde.rbxm
 ```
 

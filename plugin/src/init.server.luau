@@ -32,15 +32,26 @@ uiToggleBtn:SetActive(verdeWidget.Enabled)
 store.set("UIShown", verdeWidget.Enabled)
 
 local unmountApp
+local function mountApp()
+    if not unmountApp then
+        unmountApp = vide.mount(require(script.ui.app), verdeWidget)
+    end
+end
+
+if verdeWidget.Enabled then
+    mountApp()
+end
+
 uiToggleBtn.Click:Connect(function()
     store.set("UIShown", verdeWidget.Enabled)
     verdeWidget.Enabled = not verdeWidget.Enabled
 
     -- Initialise UI
     if verdeWidget.Enabled then
-        unmountApp = vide.mount(require(script.ui.app), verdeWidget)
+        mountApp()
     elseif unmountApp then
         unmountApp()
+        unmountApp = nil
     end
 end)
 

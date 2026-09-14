@@ -87,9 +87,10 @@ fn diff_node(path: &[String], baseline: &GameNode, target: &GameNode, actions: &
         if child.effective_class(name) != target_child.effective_class(name) {
           // A class change replaces the instance: delete first so the create
           // cannot collide with the stale instance of the same name.
-          emit_delete(&child_path, actions);
-          emit_create(&child_path, target_child, actions);
-          emit_creates(&child_path, target_child, actions);
+          if emit_delete(&child_path, actions) {
+            emit_create(&child_path, target_child, actions);
+            emit_creates(&child_path, target_child, actions);
+          }
         } else {
           diff_node(&child_path, child, target_child, actions);
         }
@@ -98,7 +99,9 @@ fn diff_node(path: &[String], baseline: &GameNode, target: &GameNode, actions: &
         emit_create(&child_path, target_child, actions);
         emit_creates(&child_path, target_child, actions);
       }
-      (Some(_), None) => emit_delete(&child_path, actions),
+      (Some(_), None) => {
+        emit_delete(&child_path, actions);
+      }
       (None, None) => unreachable!("union iteration only yields present names"),
     }
   }
@@ -125,16 +128,17 @@ fn emit_creates(path: &[String], node: &GameNode, actions: &mut Vec<TreeAction>)
 }
 
 /// Emits a delete action for a path. Top level services are not destroyable.
-fn emit_delete(path: &[String], actions: &mut Vec<TreeAction>) {
+fn emit_delete(path: &[String], actions: &mut Vec<TreeAction>) -> bool {
   if path.len() <= 1 {
     eprintln!(
       "Ignoring delete of top level service {}",
       path.first().cloned().unwrap_or_default()
     );
-    return;
+    return false;
   }
 
   actions.push(TreeAction::Delete { path: path.to_vec() });
+  true
 }
 
 /// Applies actions to a game tree in memory. Used to merge tree exports with
@@ -324,6 +328,16 @@ mod tests {
     assert_eq!(actions.len(), 2);
     assert!(matches!(actions[0], TreeAction::Delete { .. }));
     assert!(matches!(actions[1], TreeAction::Create { .. }));
+  }
+
+  #[test]
+  fn top_level_service_class_change_is_suppressed() {
+    let actions = diff(
+      r#"{"Workspace":{"className":"Workspace"}}"#,
+      r#"{"Workspace":{"className":"Folder","children":{"Thing":{}}}}"#,
+    );
+
+    assert!(actions.is_empty());
   }
 
   #[test]

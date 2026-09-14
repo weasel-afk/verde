@@ -97,7 +97,7 @@ end
 function get<T>(_key: string): T
     -- Settings are persisted with a Verde prefix (see set below).
     local val = pluginInstance():GetSetting(`Verde{_key}`)
-    if not val then
+    if val == nil then
         local defaultValue = DEFAULT_SETTINGS[_key].Default
         set(_key, defaultValue)
         return defaultValue
@@ -134,7 +134,7 @@ end
     Retrieves a setting value
 ]]
 function Config.getSetting<T>(_key: string): T
-    if Config._settingCache[_key] then
+    if Config._settingCache[_key] ~= nil then
         return Config._settingCache[_key] :: T
     end
 

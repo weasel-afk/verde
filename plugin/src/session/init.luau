@@ -106,6 +106,13 @@ function Session:fetchHeartbeat()
 end
 
 --[[
+    Acknowledges all heartbeat actions through the supplied delivery cursor.
+]]
+function Session:ackHeartbeat(cursor: number)
+    return self:makeRequest("heartbeat", "POST", { cursor = cursor })
+end
+
+--[[
     Posts a game tree export to the session.
 ]]
 function Session:postTree(tree: unknown)

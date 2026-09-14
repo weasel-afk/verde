@@ -37,10 +37,10 @@ return function()
             ClearTextOnFocus = false,
             FocusLost = function()
                 local value = tonumber(port())
-                if value then
-                    config.updateSetting("Port", tostring(math.floor(value)))
+                if value and value % 1 == 0 and value >= 1 and value <= 65535 then
+                    config.updateSetting("Port", tostring(value))
                 else
-                    -- Reset the field to the current setting on invalid input.
+                    -- Reset the field for non-integer and out-of-range values.
                     port(config.getSetting("Port"))
                 end
             end,
