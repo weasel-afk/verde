@@ -12,6 +12,7 @@ local DEFAULT_CONFIG = table.freeze {
     HOST = "localhost",
     PORT = 34872,
     VERSION = "v0.1.0-beta",
+    HEARTBEAT_INTERVAL = 0.2,
     MENUS = {
         home = "rbxassetid://10734940825",
         settings = "rbxassetid://10734950309",
@@ -31,6 +32,16 @@ local DEFAULT_SETTINGS = table.freeze {
         Name = "Show Toasts",
         Type = "Checkbox",
         Default = true,
+    },
+    Host = {
+        Name = "Host",
+        Type = "Text",
+        Default = "localhost",
+    },
+    Port = {
+        Name = "Port",
+        Type = "Text",
+        Default = "34872",
     },
 } :: DefaultSettings
 
@@ -59,7 +70,8 @@ local Config = {
     Retrieves the setting from studio or creates a new setting
 ]]
 function get<T>(_key: string): T
-    local val = plugin:GetSetting(_key)
+    -- Settings are persisted with a Verde prefix (see set below).
+    local val = plugin:GetSetting(`Verde{_key}`)
     if not val then
         local defaultValue = DEFAULT_SETTINGS[_key].Default
         set(_key, defaultValue)

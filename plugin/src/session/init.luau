@@ -6,9 +6,9 @@
 local HttpService = game:GetService("HttpService")
 
 export type SessionData = {
-	BaseUrl: string,
-	Connected: boolean,
-	Services: { string },
+    BaseUrl: string,
+    Connected: boolean,
+    Services: { string },
 }
 
 local Session = {}
@@ -18,13 +18,13 @@ Session.__index = Session
     Creates a new session.
 ]]
 function Session.new(_host: string?, _port: number?, _secure: boolean?)
-	local sessionData = {
-		BaseUrl = `{if _secure then "https" else "http"}://{_host}:{_port}`,
-		Connected = false,
-		Services = {},
-	}
+    local sessionData = {
+        BaseUrl = `{if _secure then "https" else "http"}://{_host}:{_port}`,
+        Connected = false,
+        Services = {},
+    }
 
-	return setmetatable(sessionData, Session)
+    return setmetatable(sessionData, Session)
 end
 
 --[[
@@ -33,63 +33,63 @@ end
     (or nil) and an error message on failure.
 ]]
 function Session:makeRequest(_path: string, _method: "GET" | "POST"?, _body: unknown?)
-	local options = {
-		Url = `{self.BaseUrl}/{_path}`,
-		Method = _method or "GET",
-	}
+    local options = {
+        Url = `{self.BaseUrl}/{_path}`,
+        Method = _method or "GET",
+    }
 
-	if _body ~= nil then
-		options.Headers = { ["Content-Type"] = "application/json" }
-		options.Body = HttpService:JSONEncode(_body)
-	end
+    if _body ~= nil then
+        options.Headers = { ["Content-Type"] = "application/json" }
+        options.Body = HttpService:JSONEncode(_body)
+    end
 
-	local ok, result = pcall(function()
-		return HttpService:RequestAsync(options)
-	end)
-	if not ok then
-		return nil, result
-	end
-	if not result.Success then
-		return nil, `{result.StatusCode} {result.StatusMessage}`
-	end
+    local ok, result = pcall(function()
+        return HttpService:RequestAsync(options)
+    end)
+    if not ok then
+        return nil, result
+    end
+    if not result.Success then
+        return nil, `{result.StatusCode} {result.StatusMessage}`
+    end
 
-	if result.Body ~= nil and result.Body ~= "" then
-		local decodedOk, decodedBody = pcall(HttpService.JSONDecode, HttpService, result.Body)
-		if decodedOk then
-			return decodedBody, nil
-		end
-	end
+    if result.Body ~= nil and result.Body ~= "" then
+        local decodedOk, decodedBody = pcall(HttpService.JSONDecode, HttpService, result.Body)
+        if decodedOk then
+            return decodedBody, nil
+        end
+    end
 
-	return nil, nil
+    return nil, nil
 end
 
 --[[
     Connects to a session, storing the returned project configuration.
 ]]
 function Session:connect(_pluginVersion: string?)
-	local data, err = self:makeRequest("connect", "POST", {
-		pluginVersion = _pluginVersion,
-	})
-	if not data then
-		return false, err
-	end
+    local data, err = self:makeRequest("connect", "POST", {
+        pluginVersion = _pluginVersion,
+    })
+    if not data then
+        return false, err
+    end
 
-	self.Connected = true
-	self.Services = data.services or {}
+    self.Connected = true
+    self.Services = data.services or {}
 
-	return true, data
+    return true, data
 end
 
 --[[
     Disconnects from the current session.
 ]]
 function Session:disconnect()
-	if not self.Connected then
-		return
-	end
+    if not self.Connected then
+        return
+    end
 
-	self.Connected = false
-	self:makeRequest("disconnect", "POST")
+    self.Connected = false
+    self:makeRequest("disconnect", "POST")
 end
 
 --[[
@@ -97,14 +97,14 @@ end
     actions to apply.
 ]]
 function Session:fetchHeartbeat()
-	return self:makeRequest("heartbeat")
+    return self:makeRequest("heartbeat")
 end
 
 --[[
     Posts a game tree export to the session.
 ]]
 function Session:postTree(tree: unknown)
-	return self:makeRequest("tree", "POST", tree)
+    return self:makeRequest("tree", "POST", tree)
 end
 
 return Session
