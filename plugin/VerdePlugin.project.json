@@ -1,5 +1,5 @@
 {
-    "name": "Verde",
+    "name": "Verde Fork",
     "tree": {
         "$className": "Script",
         "$path": "src/init.server.luau",

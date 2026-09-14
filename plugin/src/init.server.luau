@@ -17,12 +17,13 @@ vide.strict = true -- Enable strict mode
 
 -- Setup Plugin Widget
 local widgetSettings = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Right, true, false, 320, 210, 300, 210)
-local verdeWidget = plugin:CreateDockWidgetPluginGui("VerdeWidget", widgetSettings)
-verdeWidget.Title = "Verde"
+local verdeWidget = plugin:CreateDockWidgetPluginGui("VerdeForkWidget", widgetSettings)
+verdeWidget.Title = "Verde Fork"
 
--- Setup plugin toolbar
-local verdeToolbar = plugin:CreateToolbar("Verde")
-local uiToggleBtn = verdeToolbar:CreateButton("Verde", "Toggle Verde UI", "rbxassetid://14891988900")
+-- Setup plugin toolbar. Distinct from the upstream Verde so the two
+-- toolbars do not merge when both plugins are installed.
+local verdeToolbar = plugin:CreateToolbar("Verde Fork")
+local uiToggleBtn = verdeToolbar:CreateButton("Verde Fork", "Toggle Verde Fork UI", "rbxassetid://14891988900")
 uiToggleBtn:SetActive(verdeWidget.Enabled)
 store.set("UIShown", verdeWidget.Enabled)
 
