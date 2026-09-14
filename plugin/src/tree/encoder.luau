@@ -45,6 +45,15 @@ function Encoder.encodeValue(value: unknown): types.PropertyValue?
     local valueType = typeof(value)
 
     if valueType == "boolean" or valueType == "number" or valueType == "string" then
+        -- JSON cannot represent non-finite numbers (e.g. RollOffMaxDistance
+        -- defaults to math.huge); skip them rather than fail the export.
+        if valueType == "number" then
+            local number = value :: number
+            if number ~= number or number == math.huge or number == -math.huge then
+                return nil
+            end
+        end
+
         return value
     elseif valueType == "Vector2" then
         local vector = value :: Vector2

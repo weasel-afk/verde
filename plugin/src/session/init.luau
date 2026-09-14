@@ -40,10 +40,15 @@ function Session:makeRequest(_path: string, _method: "GET" | "POST"?, _body: unk
 
     if _body ~= nil then
         options.Headers = { ["Content-Type"] = "application/json" }
-        options.Body = HttpService:JSONEncode(_body)
     end
 
+    -- Encoding can fail on non-representable values; keep it inside the
+    -- pcall so a bad body surfaces as a request error instead of throwing.
     local ok, result = pcall(function()
+        if _body ~= nil then
+            options.Body = HttpService:JSONEncode(_body)
+        end
+
         return HttpService:RequestAsync(options)
     end)
     if not ok then
