@@ -109,7 +109,7 @@ export default defineConfig({
         items: [
           {
             text: 'Reference',
-            items: [{ text: 'CLI', link: 'cli' }],
+            items: [{ text: 'CLI', link: 'cli' }, { text: 'Game Tree (game.json)', link: 'game-json' }],
           },
         ],
       },

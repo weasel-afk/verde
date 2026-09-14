@@ -80,9 +80,9 @@ for k, v in config.getConfig() do
     Store.set(k, v)
 end
 
--- Add settings
-for setting, value in config.getSettings() do
-    Store.set(setting, value.Default)
+-- Add settings (seeded from their persisted values)
+for setting, _ in config.getSettings() do
+    Store.set(setting, config.getSetting(setting))
 end
 
 -- Internally track settings changes from external sources

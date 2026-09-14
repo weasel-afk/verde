@@ -5,6 +5,7 @@ pub mod payload;
 pub mod project;
 pub mod session;
 pub mod sourcemap;
+pub mod tree;
 pub mod watcher;
 
 use crate::core::project::VerdeProject;

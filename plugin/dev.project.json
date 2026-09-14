@@ -10,7 +10,10 @@
                     "$path": "storybook/"
                 },
                 "packages": {
-                    "$path": "packages/"
+                    "$path": "roblox_packages/",
+                    ".pesde": {
+                        "$path": "roblox_packages/.pesde/"
+                    }
                 }
             }
         }

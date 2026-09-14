@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 use super::project::VerdeProject;
-use crate::{api, core::watcher::VerdeWatcher};
+use crate::{api, core::tree::TreeState, core::watcher::VerdeWatcher};
 use std::{
   net::{IpAddr, Ipv4Addr, SocketAddr},
   sync::Arc,
@@ -13,7 +13,7 @@ use tokio::{
 };
 
 pub const DEFAULT_HOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-pub const DEFAULT_PORT: u16 = 3000;
+pub const DEFAULT_PORT: u16 = 34872;
 
 /// Describes the current state of the session.
 pub enum SessionState {
@@ -58,26 +58,35 @@ impl VerdeSession {
   pub fn start(&self) -> anyhow::Result<()> {
     println!("Serving on port {}", self.port);
 
+    // Setup game tree state (baseline snapshot + game.json document)
+    let tree = Arc::new(TreeState::initialise(&self.project)?);
+
     // Setup watcher
-    let mut watcher = VerdeWatcher::new(&self.project)?;
+    let mut watcher = VerdeWatcher::new(&self.project, Arc::clone(&tree))?;
 
     // Start serve api
     self.runtime.block_on(async {
-      // Create api route
+      // Apply any game.json edits made while Verde was not running.
       let payload = Arc::clone(&watcher.payload);
-      match api::get_routes(payload) {
-        Ok(api) => {
-          // Start watching and serving api
-          let watch_fut = watcher.start();
-          let api_fut = warp::serve(api).run(SocketAddr::new(self.host, self.port));
-          let (watcher_res, _) = join!(watch_fut, api_fut);
-          match watcher_res {
-            Ok(()) => println!("Watcher stopped."),
-            Err(err) => println!("Watcher failed {err}"),
-          };
-        }
-        Err(api_err) => println!("Failed to start api. {api_err:?}"),
+      if let Err(error) = tree.handle_game_json_event(&payload) {
+        eprintln!("Failed to process existing game.json: {error:#}");
       }
+
+      // Create api route
+      let api = api::get_routes(Arc::new(api::ApiState {
+        payload,
+        tree: Arc::clone(&tree),
+        project: Arc::clone(&self.project),
+      }));
+
+      // Start watching and serving api
+      let watch_fut = watcher.start();
+      let api_fut = warp::serve(api).run(SocketAddr::new(self.host, self.port));
+      let (watcher_res, _) = join!(watch_fut, api_fut);
+      match watcher_res {
+        Ok(()) => println!("Watcher stopped."),
+        Err(err) => println!("Watcher failed {err}"),
+      };
     });
 
     Ok(())

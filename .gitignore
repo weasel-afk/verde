@@ -14,3 +14,6 @@ target/
 
 # local project files
 .local
+
+# Verde sync state
+.verde/

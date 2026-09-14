@@ -6,7 +6,11 @@
 /*.rbxl.lock
 
 # Dependencies
-packages/*
+roblox_packages/
 
 # Sourcemap (should auto generate)
 sourcemap.json
+
+# Built plugin artifacts
+*.rbxm
+*.rbxmx
