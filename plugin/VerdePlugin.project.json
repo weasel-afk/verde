@@ -1,40 +1,9 @@
 {
     "name": "Verde Fork",
     "tree": {
-        "$className": "Script",
-        "$path": "src/init.server.luau",
-        "config": {
-            "$path": "src/config.luau"
-        },
+        "$path": "src",
         "packages": {
-            "$path": "roblox_packages/",
-            ".pesde": {
-                "$path": "roblox_packages/.pesde/"
-            }
-        },
-        "properties": {
-            "$path": "src/properties.luau"
-        },
-        "session": {
-            "$path": "src/session"
-        },
-        "store": {
-            "$path": "src/store.luau"
-        },
-        "sync": {
-            "$path": "src/sync.luau"
-        },
-        "theme": {
-            "$path": "src/theme.luau"
-        },
-        "tree": {
-            "$path": "src/tree"
-        },
-        "types": {
-            "$path": "src/types.luau"
-        },
-        "ui": {
-            "$path": "src/ui"
+            "$path": "roblox_packages/"
         }
     }
 }
