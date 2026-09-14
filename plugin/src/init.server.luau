@@ -8,9 +8,12 @@ if not plugin then
     return error("Please run Verde in a plugin context")
 end
 
-local store = require(script.Parent.store)
-local vide = require(script.Parent.packages.vide)
-vide.strict = true -- Disable strict mode in production for performance improvement
+-- The plugin is distributed as a single script whose children are the
+-- source tree (the rojo init.server.luau convention), so modules resolve
+-- from the script itself rather than a parent folder.
+local store = require(script.store)
+local vide = require(script.packages.vide)
+vide.strict = true -- Enable strict mode
 
 -- Setup Plugin Widget
 local widgetSettings = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Right, true, false, 320, 210, 300, 210)
@@ -30,7 +33,7 @@ uiToggleBtn.Click:Connect(function()
 
     -- Initialise UI
     if verdeWidget.Enabled then
-        unmountApp = vide.mount(require(script.Parent.ui.app), verdeWidget)
+        unmountApp = vide.mount(require(script.ui.app), verdeWidget)
     elseif unmountApp then
         unmountApp()
     end
@@ -38,4 +41,4 @@ end)
 
 -- Initialise Toasts
 -- Toasts are persistent so do not need to be unmounted.
-vide.mount(require(script.Parent.ui.toasts), game.CoreGui)
+vide.mount(require(script.ui.toasts), game.CoreGui)

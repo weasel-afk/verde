@@ -21,9 +21,9 @@ The plugin directory is itself a Roblox project. With the toolchain installed ([
 
 ```sh
 cd plugin
-rokit install        # installs rojo, StyLua and pesde
-pesde install        # installs Luau dependencies
-rojo build default.project.json -o Verde.rbxm
+rokit install        # installs rojo, StyLua and pesde (approve each tool when prompted)
+pesde install        # installs Luau dependencies into packages/
+rojo build VerdePlugin.project.json -o Verde.rbxm
 ```
 
-Copy `Verde.rbxm` into Studio's plugins folder (Studio → Plugins Folder), or use `rojo serve dev.project.json` with the Rojo plugin for live development against `Workspace.Verde`.
+`VerdePlugin.project.json` builds the distributable plugin: a single top-level `Verde` script with the whole source tree and dependencies as its children. Copy `Verde.rbxm` into Studio's plugins folder (Studio → Plugins tab → Plugins Folder). For live development instead, use `rojo serve dev.project.json` with the Rojo Studio plugin against `Workspace.Verde`.
