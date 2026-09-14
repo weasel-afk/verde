@@ -8,36 +8,42 @@ use notify::EventKind;
 use std::{fs, path::Path, sync::Arc};
 
 /// Transforms a file event into a payload action.
+/// Returns None for files not mapped by the project (e.g. logs or state
+/// files in the project root).
 pub fn transform_file(
   file_path: &Path,
   kind: &EventKind,
   project: &Arc<VerdeProject>,
-) -> anyhow::Result<PayloadAction> {
-  // Create the script change
-  let (path, value) = transform_script(file_path, project)?;
-
-  // Wrap the change in an action based on file event.
-  let action = match kind {
-    notify::EventKind::Remove(_) => PayloadAction::Delete { path },
-    _ => PayloadAction::Change { path, value },
+) -> anyhow::Result<Option<PayloadAction>> {
+  // Resolve the instance path for the file.
+  let Some(path) = transform_script_path(file_path, project)? else {
+    return Ok(None);
   };
 
-  Ok(action)
+  // Wrap the change in an action based on file event. Removed files are
+  // not read; their contents are gone by definition.
+  let action = match kind {
+    notify::EventKind::Remove(_) => PayloadAction::Delete { path },
+    _ => PayloadAction::Change {
+      path,
+      value: Some(fs::read_to_string(file_path)?),
+    },
+  };
+
+  Ok(Some(action))
 }
 
-/// Transform a file into a Roblox script change.
-fn transform_script(file_path: &Path, project: &Arc<VerdeProject>) -> anyhow::Result<(Vec<String>, Option<String>)> {
+/// Resolves the Roblox instance path for a file. Returns None when no
+/// project node maps the file.
+fn transform_script_path(file_path: &Path, project: &Arc<VerdeProject>) -> anyhow::Result<Option<Vec<String>>> {
   // Get file path
   let root = project.root.as_ref().unwrap().canonicalize()?;
   let mut stripped_path = file_path.strip_prefix(root)?;
 
   // Find associated node
   let Some(current_node) = project.find_node(stripped_path) else {
-    bail!("Unable to find associated node with path {:?}", stripped_path);
+    return Ok(None);
   };
-
-  // Get file contents
-  let contents = fs::read_to_string(file_path)?;
 
   // Create path from node
   let Some(mut roblox_path) = current_node.roblox_path else {
@@ -51,5 +57,5 @@ fn transform_script(file_path: &Path, project: &Arc<VerdeProject>) -> anyhow::Re
     roblox_path.push(path.to_string());
   }
 
-  Ok((crate::core::tree::normalise_path(roblox_path), Some(contents)))
+  Ok(Some(crate::core::tree::normalise_path(roblox_path)))
 }

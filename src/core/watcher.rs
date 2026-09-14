@@ -46,11 +46,18 @@ impl VerdeWatcher {
   pub fn new(project: &Arc<VerdeProject>, tree: Arc<TreeState>) -> anyhow::Result<Self> {
     let (watch_tx, watch_rx) = mpsc::channel(1); // watch send/receive queue 1 item
 
-    // Watch the project root (for game.json) alongside the mapped directories.
+    // Watch the project root (non-recursively, for game.json) alongside the
+    // mapped directories (recursively).
     let root = project.root.as_ref().context("The project has no root directory")?;
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    let mut paths = vec![root.clone()];
-    paths.extend(project.tree.get_roots());
+    let mut paths = vec![(root.clone(), RecursiveMode::NonRecursive)];
+    paths.extend(
+      project
+        .tree
+        .get_roots()
+        .into_iter()
+        .map(|path| (path, RecursiveMode::Recursive)),
+    );
 
     // Create debounce watcher
     let _debouncer = create_watcher(watch_tx, paths)?;
@@ -98,10 +105,12 @@ impl VerdeWatcher {
       }
 
       if let Ok(mut payload) = self.payload.try_write() {
-        // A single untransformable file (e.g. an unparsable project mapping)
-        // must not stop the watch loop for the remaining files.
+        // A single untransformable file must not stop the watch loop for
+        // the remaining files. Unmapped files (logs, state, anything else
+        // in the project root) are skipped silently.
         match transform_file(file_path, &event.kind, &self.project) {
-          Ok(file) => payload.add_payload(file),
+          Ok(Some(file)) => payload.add_payload(file),
+          Ok(None) => {}
           Err(error) => eprintln!("Failed to transform {}: {error:#}", file_path.display()),
         }
       }
@@ -120,7 +129,10 @@ impl VerdeWatcher {
 }
 
 /// Creates a new file system watcher piping events to the watch transmitter.
-pub fn create_watcher(watch_tx: mpsc::Sender<DebouncedEvent>, paths: Vec<PathBuf>) -> anyhow::Result<VerdeDebouncer> {
+pub fn create_watcher(
+  watch_tx: mpsc::Sender<DebouncedEvent>,
+  paths: Vec<(PathBuf, RecursiveMode)>,
+) -> anyhow::Result<VerdeDebouncer> {
   // We shouldnt get any empty paths if project is correct
   if paths.is_empty() {
     bail!("Unable to find any directories to watch. Please check your project file.");
@@ -141,9 +153,9 @@ pub fn create_watcher(watch_tx: mpsc::Sender<DebouncedEvent>, paths: Vec<PathBuf
 
   // Setup watcher and cache for each specified root
   // The paths should be canonicalized so we dont need to do any extra processing
-  for path in paths {
+  for (path, mode) in paths {
     debouncer
-      .watch(&path, RecursiveMode::Recursive)
+      .watch(&path, mode)
       .with_context(|| format!("Failed to watch {path:?} for file changes."))?;
   }
 
