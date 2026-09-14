@@ -11,10 +11,12 @@ import { ContextMenuRegistry } from "./contextMenuRegistry";
 import { LuauExecutionService } from "./luauExecutionService";
 import { VerdeApi } from "./api";
 import { invalidateCustomIconCache, resolveIconUri } from "./iconResolver";
+import { GameJsonSync } from "./gameJsonSync";
 
 import * as fzy from "fzy.js";
 
 let backend: VerdeBackend | null = null;
+let gameJsonSync: GameJsonSync | null = null;
 let sourcemapParser: SourcemapParser;
 let propertiesViewProvider: PropertiesViewProvider;
 let explorerViewProvider: ExplorerViewProvider;
@@ -158,6 +160,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<VerdeA
 		explorerViewProvider?.handleSearchResults(query, nodes);
 	}, () => {
 		explorerViewProvider?.markFullSyncTooBig();
+	}, () => {
+		gameJsonSync?.handleClientConnected();
+	}, (tree) => {
+		gameJsonSync?.ingestExport(tree);
 	});
 
 	const sourcemapPath = vscode.workspace.getConfiguration('verde').get('sourcemapPath', 'sourcemap.json');
@@ -217,6 +223,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<VerdeA
 
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeConfiguration((event) => {
+			if (event.affectsConfiguration("verde.gameJsonSync") || event.affectsConfiguration("verde.gameJsonPath")) {
+				configureGameJsonSync(outputChannel);
+			}
+
 			if (!event.affectsConfiguration("verde.iconDirectory")) {
 				return;
 			}
@@ -466,6 +476,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<VerdeA
 				vscode.window.showErrorMessage(`verde backend failed to start: ${String(error)}`);
 				outputChannel.show(true);
 			}
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("verde.exportGameTree", async () => {
+			if (!gameJsonSync) {
+				vscode.window.showWarningMessage("Verde: game.json sync is disabled (verde.gameJsonSync).");
+				return;
+			}
+			if (!backend?.hasConnectedClient()) {
+				vscode.window.showWarningMessage("Verde: no plugin connected; connect the Studio plugin first.");
+				return;
+			}
+			await gameJsonSync.exportFromStudio();
 		})
 	);
 
@@ -1049,6 +1073,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<VerdeA
 	const config = vscode.workspace.getConfiguration("verde");
 	const autoStart = config.get<boolean>("autoStart", true);
 
+	configureGameJsonSync(outputChannel);
+
 	if (autoStart) {
 		try {
 			await backend.start();
@@ -1065,8 +1091,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<VerdeA
 }
 
 export async function deactivate() {
+	if (gameJsonSync) {
+		gameJsonSync.dispose();
+		gameJsonSync = null;
+	}
 	if (backend) {
 		await backend.stop();
 		backend = null;
+	}
+}
+
+/** Creates or tears down the game.json sync controller on setting changes. */
+function configureGameJsonSync(outputChannel: vscode.OutputChannel): void {
+	if (!backend) {
+		return;
+	}
+
+	const enabled = vscode.workspace.getConfiguration("verde").get<boolean>("gameJsonSync", false);
+
+	if (gameJsonSync) {
+		gameJsonSync.dispose();
+		gameJsonSync = null;
+	}
+
+	if (enabled) {
+		gameJsonSync = new GameJsonSync(backend, outputChannel);
+		if (backend.hasConnectedClient()) {
+			gameJsonSync.handleClientConnected();
+		}
 	}
 }

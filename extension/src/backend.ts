@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import { WebSocketServer, WebSocket, RawData } from "ws";
 import { Snapshot, Node } from "./robloxExplorerProvider";
+import { GameTree } from "./gameTree";
+import { TreeAction } from "./treeDiff";
 
 export type Operation =
     | { type: "move_node"; nodeId: string; newParentId: string | null }
@@ -13,6 +15,7 @@ export type Operation =
     | { type: "get_properties"; nodeId: string }
     | { type: "deselect_instance" }
     | { type: "set_property"; nodeId: string; propertyName: string; propertyValue: any }
+    | { type: "apply_tree_actions"; actions: TreeAction[] }
     | { type: "add_tag"; nodeId: string; tagName: string }
     | { type: "remove_tag"; nodeId: string; tagName: string }
     | { type: "add_attribute"; nodeId: string; attributeName: string; attributeType: string }
@@ -81,6 +84,8 @@ type RobloxInboundMessage =
     | { type: "explorer_delta"; ops: ExplorerDeltaOp[]; addedRootIds?: string[] }
     | { type: "operation_result"; requestId?: string; operationId: string; result: OperationResult }
     | { type: "property_update"; nodeId: string; properties: PropertiesData }
+    | { type: "game_tree"; requestId?: string; payload?: GameTree }
+    | { type: "game_tree_too_big"; requestId?: string }
     | { type: "handshake"; timestamp: number }
     | { type: "ack"; timestamp: number }
     | { type: string; requestId?: string; payload?: unknown };
@@ -90,6 +95,7 @@ type BackendOutboundMessage =
     | { type: "error"; requestId?: string; message: string }
     | { type: "operation"; requestId?: string; operationId: string; operation: Operation }
     | { type: "request_snapshot"; requestId?: string; full?: boolean }
+    | { type: "request_game_tree"; requestId?: string }
     | { type: "request_children"; requestId?: string; parentIds: string[] }
     | { type: "release_subtree"; requestId?: string; parentIds: string[]; nodeIds: string[] }
     | { type: "request_search"; requestId?: string; query: string };
@@ -102,6 +108,8 @@ export class VerdeBackend {
     private readonly onConnectionLost?: () => void;
     private readonly onSearchResultReceived?: (query: string, nodes: Node[]) => void;
     private readonly onSnapshotTooBig?: () => void;
+    private readonly onClientConnected?: () => void;
+    private readonly onGameTreeReceived?: (tree: GameTree) => void;
     private readonly propertyUpdateCallbacks: ((nodeId: string, properties: PropertiesData) => void)[] = [];
 
     private webSocketServer: WebSocketServer | null = null;
@@ -119,7 +127,16 @@ export class VerdeBackend {
         requestedAt: number;
         timeout: NodeJS.Timeout;
     } | null = null;
+    private pendingGameTree: {
+        promise: Promise<GameTree>;
+        resolve: (tree: GameTree) => void;
+        reject: (reason: Error) => void;
+        requestedAt: number;
+        timeout: NodeJS.Timeout;
+    } | null = null;
     private static readonly FULL_SNAPSHOT_STALE_MS = 15000;
+    private static readonly GAME_TREE_STALE_MS = 60000;
+    private multiClientWarned = false;
 
     constructor(
         outputChannel: vscode.OutputChannel,
@@ -129,6 +146,8 @@ export class VerdeBackend {
         onConnectionLost?: () => void,
         onSearchResultReceived?: (query: string, nodes: Node[]) => void,
         onSnapshotTooBig?: () => void,
+        onClientConnected?: () => void,
+        onGameTreeReceived?: (tree: GameTree) => void,
     ) {
         this.outputChannel = outputChannel;
         this.statusBarItem = statusBarItem;
@@ -137,6 +156,8 @@ export class VerdeBackend {
         this.onConnectionLost = onConnectionLost;
         this.onSearchResultReceived = onSearchResultReceived;
         this.onSnapshotTooBig = onSnapshotTooBig;
+        this.onClientConnected = onClientConnected;
+        this.onGameTreeReceived = onGameTreeReceived;
         this.updateStatusBar();
     }
 
@@ -195,6 +216,9 @@ export class VerdeBackend {
 
             this.send(socket, { type: "ack" });
             this.startAckInterval();
+            if (this.onClientConnected) {
+                this.onClientConnected();
+            }
         });
 
         this.webSocketServer.on("error", (err) => {
@@ -235,6 +259,7 @@ export class VerdeBackend {
         this.initialSyncComplete = false;
         this.failPendingOperations("backend stopped");
         this.rejectPendingFullSnapshot("backend stopped");
+        this.rejectPendingGameTree("backend stopped");
         this.updateStatusBar();
     }
 
@@ -277,6 +302,7 @@ export class VerdeBackend {
     private handleAllClientsDisconnected(reason: string): void {
         this.failPendingOperations(reason);
         this.rejectPendingFullSnapshot(reason);
+        this.rejectPendingGameTree(reason);
         if (!this.connectionLostNotified) {
             this.connectionLostNotified = true;
             if (this.onConnectionLost) {
@@ -296,10 +322,91 @@ export class VerdeBackend {
         pending.reject(new Error(reason));
     }
 
+    private resolvePendingGameTree(tree: GameTree): void {
+        if (!this.pendingGameTree) {
+            return;
+        }
+
+        const pending = this.pendingGameTree;
+        this.pendingGameTree = null;
+        clearTimeout(pending.timeout);
+        pending.resolve(tree);
+    }
+
+    private rejectPendingGameTree(reason: string): void {
+        if (!this.pendingGameTree) {
+            return;
+        }
+
+        const pending = this.pendingGameTree;
+        this.pendingGameTree = null;
+        clearTimeout(pending.timeout);
+        pending.reject(new Error(reason));
+    }
+
     public requestChildren(parentIds: string[]): void {
         if (parentIds.length === 0) return;
         this.log(`request_children for ${parentIds.length} parent(s): ${parentIds.join(", ")}`);
         this.broadcast({ type: "request_children", parentIds });
+    }
+
+    /**
+     * Requests a full game tree export from the plugin. The plugin replies
+     * with a pushed game_tree message (not an operation), so large exports
+     * are not bound by operation timeouts. Resolves null when no client is
+     * connected.
+     */
+    public requestGameTree(): Promise<GameTree | null> {
+        if (this.clients.size === 0) {
+            return Promise.resolve(null);
+        }
+
+        if (this.pendingGameTree) {
+            if (Date.now() - this.pendingGameTree.requestedAt < VerdeBackend.GAME_TREE_STALE_MS) {
+                return this.pendingGameTree.promise;
+            }
+            this.rejectPendingGameTree("game_tree_request_abandoned");
+        }
+
+        let resolveFn!: (tree: GameTree) => void;
+        let rejectFn!: (reason: Error) => void;
+        const promise = new Promise<GameTree>((resolve, reject) => {
+            resolveFn = resolve;
+            rejectFn = reject;
+        });
+
+        promise.catch(() => {});
+        const timeout = setTimeout(
+            () => this.rejectPendingGameTree("game tree timeout"),
+            VerdeBackend.GAME_TREE_STALE_MS,
+        );
+        this.pendingGameTree = { promise, resolve: resolveFn, reject: rejectFn, requestedAt: Date.now(), timeout };
+
+        this.warnMultipleClientsOnce();
+        this.broadcast({ type: "request_game_tree" });
+
+        return promise;
+    }
+
+    /**
+     * Applies a batch of tree actions on the plugin as one operation (one
+     * undo step). Delivery is at-least-once by contract: the caller keeps
+     * the batch until this resolves with success.
+     */
+    public async applyTreeActions(
+        actions: TreeAction[],
+    ): Promise<{ success: true; data?: unknown } | { success: false; error: string }> {
+        this.warnMultipleClientsOnce();
+        return this.sendOperation({ type: "apply_tree_actions", actions });
+    }
+
+    private warnMultipleClientsOnce(): void {
+        if (this.clients.size > 1 && !this.multiClientWarned) {
+            this.multiClientWarned = true;
+            this.log(
+                `warning: ${this.clients.size} clients connected; tree sync targets all of them and only the first reply wins`,
+            );
+        }
     }
 
     public releaseSubtree(parentIds: string[], nodeIds: string[]): void {
@@ -544,6 +651,43 @@ export class VerdeBackend {
                     callback(operationResultMessage.result);
                 }
 
+                this.send(socket, { type: "ack", requestId: message.requestId });
+                return;
+            }
+
+            case "game_tree": {
+                this.lastAckTime = Date.now();
+                const gameTreeMessage = message as { type: "game_tree"; payload?: GameTree };
+                const payload = gameTreeMessage.payload;
+
+                if (
+                    !payload ||
+                    typeof payload !== "object" ||
+                    (payload as { formatVersion?: unknown }).formatVersion !== 1
+                ) {
+                    this.log("received invalid game_tree payload");
+                    this.send(socket, {
+                        type: "error",
+                        requestId: message.requestId,
+                        message: "invalid_game_tree_payload",
+                    });
+                    return;
+                }
+
+                this.log("received game_tree export");
+                this.resolvePendingGameTree(payload);
+                if (this.onGameTreeReceived) {
+                    this.onGameTreeReceived(payload);
+                }
+
+                this.send(socket, { type: "ack", requestId: message.requestId });
+                return;
+            }
+
+            case "game_tree_too_big": {
+                this.lastAckTime = Date.now();
+                this.log("plugin reported the game tree is too big to export");
+                this.rejectPendingGameTree("game_tree_too_big");
                 this.send(socket, { type: "ack", requestId: message.requestId });
                 return;
             }

@@ -74,6 +74,16 @@
           "type": "string",
           "default": "",
           "description": "Optional absolute path or workspace-relative path to a directory of Roblox class icon PNGs. You can point either to the icon folder itself or to a parent pack root that contains RobloxCustom/instance/16x/200. Matching files override bundled icons, and missing files fall back to Verde's built-in icons."
+        },
+        "verde.gameJsonSync": {
+          "type": "boolean",
+          "default": false,
+          "description": "Live-sync a game.json instance tree file with Roblox Studio: edits to the file apply into Studio while the plugin is connected, and Studio exports refresh the file. Writes game.json and .verde/snapshot.json into the first workspace folder."
+        },
+        "verde.gameJsonPath": {
+          "type": "string",
+          "default": "game.json",
+          "description": "Workspace-relative path of the game tree document used by game.json sync"
         }
       }
     },
@@ -196,6 +206,11 @@
       {
         "command": "verde.redo",
         "title": "Redo",
+        "category": "Verde"
+      },
+      {
+        "command": "verde.exportGameTree",
+        "title": "Export game.json from Studio",
         "category": "Verde"
       }
     ],

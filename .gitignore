@@ -16,3 +16,9 @@ result-*
 plugin/*.rbxm
 plugin/*.rbxmx
 .claude/
+
+# Verde sync state
+.verde/
+*.json.tmp
+
+handoff.md
