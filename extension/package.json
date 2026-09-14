@@ -295,6 +295,7 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
+    "test:unit": "vitest run",
     "package": "vsce package",
     "publish:vsce": "node scripts/publish.js vsce",
     "publish:ovsx": "node scripts/publish.js ovsx",
@@ -311,7 +312,8 @@
     "eslint": "^9.39.1",
     "ovsx": "^0.10.12",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.48.1"
+    "typescript-eslint": "^8.48.1",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "fzy.js": "^0.4.1",

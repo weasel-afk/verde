@@ -10,5 +10,8 @@
 		"rootDir": "src",
 		"strict": true,
 		"declaration": true
-	}
+	},
+	"include": [
+		"src"
+	]
 }
