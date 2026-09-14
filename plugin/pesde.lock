@@ -1,0 +1,18 @@
+name = "verde/plugin"
+version = "0.1.0"
+target = "roblox"
+
+[graph."wally#centau/vide"."0.1.1 roblox"]
+direct = ["vide", { wally = "wally#centau/vide", version = "^0.1.1", index = "default" }]
+ty = "standard"
+
+[graph."wally#centau/vide"."0.1.1 roblox".target]
+environment = "roblox"
+lib = "____pesde_no_export_file_found"
+build_files = []
+
+[graph."wally#centau/vide"."0.1.1 roblox".pkg_ref]
+ref_ty = "wally"
+wally = "wally#centau/vide"
+version = "0.1.1"
+index_url = "https://github.com/UpliftGames/wally-index"
