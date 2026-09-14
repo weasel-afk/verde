@@ -10,7 +10,11 @@ end
 
 -- The plugin is distributed as a single script whose children are the
 -- source tree (the rojo init.server.luau convention), so modules resolve
--- from the script itself rather than a parent folder.
+-- from the script itself rather than a parent folder. The plugin global
+-- only exists here, so hand it to config before any module reads settings.
+local config = require(script.config)
+config.init(plugin)
+
 local store = require(script.store)
 local vide = require(script.packages.vide)
 vide.strict = true -- Enable strict mode

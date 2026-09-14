@@ -45,15 +45,8 @@ local DEFAULT_SETTINGS = table.freeze {
     },
 } :: DefaultSettings
 
-type _Config = {
-    _settingCache: {
-        [string]: unknown,
-    },
-    _settingListeners: {
-        [number]: SettingUpdateFn,
-    },
-}
 type Config = {
+    init: (_plugin: Plugin) -> (),
     getSettings: () -> DefaultSettings,
     getSetting: <T>(_key: string) -> T,
     updateSetting: (_key: string, _value: unknown) -> (),
@@ -61,17 +54,49 @@ type Config = {
     getConfig: () -> { [string]: any },
 }
 
+type _Config = {
+    _plugin: Plugin?,
+    _settingCache: {
+        [string]: unknown,
+    },
+    _settingListeners: {
+        [number]: SettingUpdateFn,
+    },
+}
+
 local Config = {
+    _plugin = nil,
     _settingCache = {},
     _settingListeners = {},
 } :: _Config & Config
+
+--[[
+    Provides the plugin instance. The plugin global only exists in the
+    entry script, so it must be handed to the config module before any
+    settings are read (the store reads settings at require time).
+]]
+function Config.init(_plugin: Plugin)
+    Config._plugin = _plugin
+end
+
+--[[
+    Retrieves the plugin, erroring clearly when it was not provided.
+]]
+local function pluginInstance(): Plugin
+    local instance = Config._plugin
+    if not instance then
+        return error("Config.init(plugin) must be called before reading settings", 2)
+    end
+
+    return instance
+end
 
 --[[
     Retrieves the setting from studio or creates a new setting
 ]]
 function get<T>(_key: string): T
     -- Settings are persisted with a Verde prefix (see set below).
-    local val = plugin:GetSetting(`Verde{_key}`)
+    local val = pluginInstance():GetSetting(`Verde{_key}`)
     if not val then
         local defaultValue = DEFAULT_SETTINGS[_key].Default
         set(_key, defaultValue)
@@ -89,7 +114,8 @@ function set(_key: string, _value: unknown)
     local doUpdate = oldValue ~= _value
     Config._settingCache[_key] = _value
     if doUpdate then
-        task.spawn(plugin.SetSetting, plugin, `Verde{_key}`, _value)
+        local instance = pluginInstance()
+        task.spawn(instance.SetSetting, instance, `Verde{_key}`, _value)
     end
 
     for _, v in Config._settingListeners do
