@@ -77,7 +77,7 @@ end
 ]]
 function resolveEnumMember(enumType: string, member: string): EnumItem?
 	local ok, enum = pcall(function()
-		return (Enum :: any)[enumType]
+		return (Enum :: any)[string.gsub(enumType, "^Enum%.", "")]
 	end)
 	if not ok or not enum then
 		return nil
@@ -151,7 +151,9 @@ function Decoder.apply(actions: { types.TreeAction }): { applied: number, failed
 				local instance = Decoder.resolve(action.path)
 				assert(instance, "instance not found")
 				local target = instance :: Instance
-				target:Destroy()
+				-- Detach rather than Destroy: Destroy locks Parent, so the
+				-- recording's undo could not restore the instance.
+				target.Parent = nil
 			else
 				error("unknown action " .. tostring(action.action))
 			end

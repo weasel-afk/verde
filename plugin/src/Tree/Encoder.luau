@@ -86,9 +86,10 @@ function Encoder.encodeValue(value: unknown): types.PropertyValue?
 		}
 	elseif valueType == "EnumItem" then
 		local item = value :: EnumItem
-		-- Enum types have no Name property; derive it from tostring ("Enum.PartType").
-		local enumName = tostring(item.EnumType)
-		return { type = "Enum", enumType = string.sub(enumName, #"Enum." + 1), value = item.Name }
+		-- Enum types have no Name property; derive it from tostring, which is
+		-- "PartType" on current Studio builds and "Enum.PartType" on older ones.
+		local enumName = string.gsub(tostring(item.EnumType), "^Enum%.", "")
+		return { type = "Enum", enumType = enumName, value = item.Name }
 	elseif valueType == "CFrame" then
 		local cframe = value :: CFrame
 		local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = cframe:GetComponents()
