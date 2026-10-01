@@ -22,3 +22,5 @@ plugin/*.rbxmx
 *.json.tmp
 
 handoff.md
+# Verde game.json document (live Studio tree)
+game.json
