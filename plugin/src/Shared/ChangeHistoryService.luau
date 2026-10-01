@@ -68,6 +68,38 @@ function ChangeHistoryHelper.RecordOperation(
 	return true
 end
 
+function ChangeHistoryHelper.RecordBatch(
+	name: string,
+	displayName: string?,
+	operationFunc: () -> ...any
+): (boolean, string?, ...any)
+	local recording = ChangeHistoryService:TryBeginRecording(name, displayName)
+
+	if not recording then
+		warn("Failed to begin recording; applying changes without undo entry:", name)
+		local unwrapped = table.pack(pcall(operationFunc))
+		if unwrapped[1] then
+			return true, nil, table.unpack(unwrapped, 2, unwrapped.n)
+		end
+		return false, tostring(unwrapped[2])
+	end
+
+	local results = table.pack(pcall(operationFunc))
+
+	if results[1] then
+		pcall(function()
+			ChangeHistoryService:FinishRecording(recording, Enum.FinishRecordingOperation.Commit)
+		end)
+		return true, nil, table.unpack(results, 2, results.n)
+	end
+
+	pcall(function()
+		ChangeHistoryService:FinishRecording(recording, Enum.FinishRecordingOperation.Cancel)
+	end)
+	warn("Failed to execute batched operation:", name, results[2])
+	return false, tostring(results[2])
+end
+
 function ChangeHistoryHelper.IsRecordingInProgress(): boolean
 	return ChangeHistoryService:IsRecordingInProgress() ~= nil
 end

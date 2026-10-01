@@ -9,6 +9,10 @@
 		"sourceMap": true,
 		"rootDir": "src",
 		"strict": true,
-		"declaration": true
-	}
+		"declaration": true,
+		"skipLibCheck": true
+	},
+	"include": [
+		"src"
+	]
 }

@@ -11,7 +11,7 @@
   },
   "icon": "logo.png",
   "engines": {
-    "vscode": "^1.74.0"
+    "vscode": "^1.85.0"
   },
   "categories": [
     "Other"
@@ -74,6 +74,26 @@
           "type": "string",
           "default": "",
           "description": "Optional absolute path or workspace-relative path to a directory of Roblox class icon PNGs. You can point either to the icon folder itself or to a parent pack root that contains RobloxCustom/instance/16x/200. Matching files override bundled icons, and missing files fall back to Verde's built-in icons."
+        },
+        "verde.gameJsonSync": {
+          "type": "boolean",
+          "default": false,
+          "description": "Live-sync a game.json instance tree file with Roblox Studio: edits to the file apply into Studio while the plugin is connected, and Studio exports refresh the file. Writes game.json and .verde/snapshot.json into the first workspace folder."
+        },
+        "verde.gameJsonPath": {
+          "type": "string",
+          "default": "game.json",
+          "description": "Workspace-relative path of the game tree document used by game.json sync"
+        },
+        "verde.mcp.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run a local MCP server (loopback only) exposing Verde's live Studio tree sync as tools for AI agents. Tree tools also require verde.gameJsonSync."
+        },
+        "verde.mcp.port": {
+          "type": "number",
+          "default": 9124,
+          "description": "Port for the local MCP HTTP server (bound to 127.0.0.1)"
         }
       }
     },
@@ -197,6 +217,16 @@
         "command": "verde.redo",
         "title": "Redo",
         "category": "Verde"
+      },
+      {
+        "command": "verde.exportGameTree",
+        "title": "Export game.json from Studio",
+        "category": "Verde"
+      },
+      {
+        "command": "verde.showMcpInfo",
+        "title": "Show MCP Server Info",
+        "category": "Verde"
       }
     ],
     "keybindings": [
@@ -295,6 +325,7 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
+    "test:unit": "vitest run",
     "package": "vsce package",
     "publish:vsce": "node scripts/publish.js vsce",
     "publish:ovsx": "node scripts/publish.js ovsx",
@@ -303,7 +334,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "@types/vscode": "^1.74.0",
+    "@types/vscode": "^1.85.0",
     "@types/ws": "^8.18.1",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
@@ -311,10 +342,13 @@
     "eslint": "^9.39.1",
     "ovsx": "^0.10.12",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.48.1"
+    "typescript-eslint": "^8.48.1",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "fzy.js": "^0.4.1",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "zod": "^3.25.76"
   }
 }

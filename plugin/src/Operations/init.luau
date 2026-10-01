@@ -1,6 +1,7 @@
 local operations = {
 	add_attribute = require(script.add_attribute),
 	add_tag = require(script.add_tag),
+	apply_tree_actions = require(script.apply_tree_actions),
 	copy_instance = require(script.copy_instance),
 	create_instance = require(script.create_instance),
 	delete_instance = require(script.delete_instance),

@@ -11,8 +11,8 @@ if RunService:IsRunning() then
 	return
 end
 
-local StateController = require(script.Parent.States.StateController)
-local SharedFolder = require(script.Parent.Shared)
+local StateController = require(script.States.StateController)
+local SharedFolder = require(script.Shared)
 local Config = SharedFolder.Config
 local SettingsPanel = SharedFolder.SettingsPanel
 local PluginButtonFactory = SharedFolder.PluginButton
@@ -20,6 +20,7 @@ local ButtonInstance = SharedFolder.ButtonInstance
 local SoundPlayer = SharedFolder.SoundPlayer
 
 Config.Load(plugin)
+SharedFolder.PluginRoot.script = script
 SoundPlayer.Init(plugin)
 
 local connectButton, settingsButton = PluginButtonFactory(plugin)
