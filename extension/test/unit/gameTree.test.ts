@@ -5,6 +5,7 @@ import {
     effectiveClassName,
     parseGameTree,
     serializeGameTree,
+    toGameTree,
     treesEqual,
 } from "../../src/gameTree";
 
@@ -65,6 +66,38 @@ describe("parseGameTree", () => {
 
     it("rejects invalid JSON", () => {
         expect(() => parseGameTree("{")).toThrow(/invalid JSON/);
+    });
+
+    it("accepts empty arrays as empty maps (Luau JSONEncode output)", () => {
+        const tree = parseGameTree(`{
+            "formatVersion": 1,
+            "className": "DataModel",
+            "children": { "Chat": { "properties": [], "children": [] } }
+        }`);
+        expect(tree.children?.Chat).toEqual({ properties: {}, children: {} });
+    });
+
+    it("still rejects non-empty arrays", () => {
+        expect(() =>
+            parseGameTree(`{"formatVersion": 1, "children": { "Chat": { "children": [{}] } }}`),
+        ).toThrow(/children must be an object/);
+    });
+});
+
+describe("toGameTree", () => {
+    it("normalizes a decoded plugin export", () => {
+        const tree = toGameTree({
+            formatVersion: 1,
+            className: "DataModel",
+            children: { Workspace: { children: { Part: { className: "Part", properties: [], children: [] } } } },
+        });
+        expect(tree.children?.Workspace?.children?.Part).toEqual({ className: "Part", properties: {}, children: {} });
+        expect(parseGameTree(serializeGameTree(tree))).toEqual(tree);
+    });
+
+    it("rejects payloads without the format version", () => {
+        expect(() => toGameTree({ className: "DataModel" })).toThrow(/formatVersion/);
+        expect(() => toGameTree(null)).toThrow(/must be an object/);
     });
 });
 

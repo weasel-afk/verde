@@ -70,7 +70,14 @@ export function parseGameTree(text: string): GameTree {
     } catch (err) {
         throw new Error(`invalid JSON: ${String(err)}`);
     }
+    return toGameTree(parsed);
+}
 
+/**
+ * Validates an already-decoded game tree (e.g. a plugin export) and
+ * normalizes every node to `{className?, properties, children}`.
+ */
+export function toGameTree(parsed: unknown): GameTree {
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
         throw new Error("the tree root must be an object");
     }
@@ -112,7 +119,18 @@ function validateNode(value: unknown, path: string[]): GameNode {
     };
 }
 
+/**
+ * Luau's JSONEncode writes an empty table as `[]`, so plugin exports carry
+ * empty property and child maps as empty arrays.
+ */
+function isEmptyArray(value: unknown): boolean {
+    return Array.isArray(value) && value.length === 0;
+}
+
 function validateProperties(value: unknown, path: string[]): Record<string, PropertyValue> {
+    if (isEmptyArray(value)) {
+        return {};
+    }
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
         throw new Error(`${path.join(".") || "root"} properties must be an object`);
     }
@@ -155,6 +173,9 @@ function validatePropertyValue(value: unknown, path: string[]): PropertyValue {
 }
 
 function validateChildren(value: unknown, path: string[]): Record<string, GameNode> {
+    if (isEmptyArray(value)) {
+        return {};
+    }
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
         throw new Error(`${path.join(".") || "root"} children must be an object`);
     }
@@ -168,8 +189,8 @@ function validateChildren(value: unknown, path: string[]): Record<string, GameNo
 
 /**
  * Serializes a game tree deterministically: keys sorted at every level,
- * two-space indent, trailing newline. Empty property and child maps are
- * omitted, as is an absent className.
+ * four-space indent, trailing newline. Empty root property and child maps
+ * are omitted, as is an absent className.
  */
 export function serializeGameTree(tree: GameTree): string {
     const object: Record<string, unknown> = {

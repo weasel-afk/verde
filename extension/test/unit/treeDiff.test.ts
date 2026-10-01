@@ -133,6 +133,15 @@ describe("diffTrees", () => {
 
         expect(a).toEqual(b);
     });
+
+    it("ignores key order inside nested tagged values", () => {
+        expect(
+            diff(
+                `{"Gui":{"className":"ImageLabel","properties":{"SliceCenter":{"type":"Rect","min":{"y":0,"x":0},"max":{"y":2,"x":1}}}}}`,
+                `{"Gui":{"className":"ImageLabel","properties":{"SliceCenter":{"max":{"x":1,"y":2},"min":{"x":0,"y":0},"type":"Rect"}}}}`,
+            ),
+        ).toEqual([]);
+    });
 });
 
 describe("applyActions", () => {

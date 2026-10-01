@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { WebSocketServer, WebSocket, RawData } from "ws";
 import { Snapshot, Node } from "./robloxExplorerProvider";
-import { GameTree } from "./gameTree";
+import { GameTree, toGameTree } from "./gameTree";
 import { TreeAction } from "./treeDiff";
 
 export type Operation =
@@ -657,15 +657,12 @@ export class VerdeBackend {
 
             case "game_tree": {
                 this.lastAckTime = Date.now();
-                const gameTreeMessage = message as { type: "game_tree"; payload?: GameTree };
-                const payload = gameTreeMessage.payload;
-
-                if (
-                    !payload ||
-                    typeof payload !== "object" ||
-                    (payload as { formatVersion?: unknown }).formatVersion !== 1
-                ) {
-                    this.log("received invalid game_tree payload");
+                const gameTreeMessage = message as { type: "game_tree"; payload?: unknown };
+                let payload: GameTree;
+                try {
+                    payload = toGameTree(gameTreeMessage.payload);
+                } catch (err) {
+                    this.log(`received invalid game_tree payload: ${err instanceof Error ? err.message : String(err)}`);
                     this.send(socket, {
                         type: "error",
                         requestId: message.requestId,

@@ -173,10 +173,19 @@ function propertyValuesEqual(a: PropertyValue, b: PropertyValue): boolean {
     return JSON.stringify(sortKeys(aTagged)) === JSON.stringify(sortKeys(bTagged));
 }
 
-function sortKeys(value: Record<string, unknown>): Record<string, unknown> {
+/** Recursively sorts object keys; nested values like Rect min/max and CFrame
+ * position arrive from Luau's JSONEncode in arbitrary key order. */
+function sortKeys(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value.map(sortKeys);
+    }
+    if (typeof value !== "object" || value === null) {
+        return value;
+    }
+    const record = value as Record<string, unknown>;
     const sorted: Record<string, unknown> = {};
-    for (const key of Object.keys(value).sort()) {
-        sorted[key] = value[key];
+    for (const key of Object.keys(record).sort()) {
+        sorted[key] = sortKeys(record[key]);
     }
     return sorted;
 }

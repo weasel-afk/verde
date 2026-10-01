@@ -106,15 +106,15 @@ export class GameJsonSync implements vscode.Disposable {
 		this.log(`watching ${path.basename(this.gameJsonPath)} (baseline at ${path.relative(root, this.snapshotPath)})`);
 	}
 
-	/** Requests a fresh tree export from the plugin, ingests it and returns
-	 * the merged tree (or null when no plugin replied). */
+	/** Requests a fresh tree export from the plugin and returns the merged
+	 * tree (or null when no plugin replied). The backend's game_tree callback
+	 * has already ingested the export by the time the request resolves. */
 	public async exportFromStudio(): Promise<GameTree | null> {
 		const tree = await this.backend.requestGameTree();
 		if (!tree) {
 			this.log("game tree export requested without a connected plugin");
 			return null;
 		}
-		this.ingestExport(tree);
 		return this.readCurrentTree();
 	}
 
